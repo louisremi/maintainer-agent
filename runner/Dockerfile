@@ -1,14 +1,19 @@
 # syntax=docker/dockerfile:1.7
 #
-# Repair-agent runner for louisremi/deepseek-harness-docker-dev.
+# maintainer-agent runner image.
 #
-# One image, several short-lived roles started by dispatch.sh on nasbrico
-# (see entrypoint.sh): the fix agent, the two triage steps (token-holding
-# fetch without a model; model without a token), the output sanitiser, and
-# the allow-list egress proxy (tinyproxy) that is the agents' only way out of
-# their internal Docker network. mini-swe-agent's `local` environment runs
-# the model's bash commands inside the agent container, so the container is
-# the sandbox; see agent-runner/README.md, "Security model".
+# One image, several short-lived roles started by the dispatcher (see
+# entrypoint.sh): the fix agent, the two triage steps (token-holding fetch
+# without a model; model without a token), the output sanitiser, the policy
+# validator, and the allow-list egress proxy (tinyproxy) that is the agents'
+# only way out of their internal Docker network. mini-swe-agent's `local`
+# environment runs the model's bash commands inside the agent container, so
+# the container is the sandbox; see README.md, "Security model".
+#
+# The toolchain is deliberately generic (Python, Node, git, gh, shellcheck,
+# hadolint). Repositories that need more build a derivative image
+# (FROM louisremi/maintainer-agent) and set it as that repo's `runner_image`
+# in the host config.
 FROM python:3.13-slim-trixie
 
 # renovate: datasource=pypi depName=mini-swe-agent
@@ -42,12 +47,15 @@ RUN set -eux; \
     mini --help >/dev/null; gh --version; hadolint --version
 
 RUN useradd --create-home --uid 10001 agent \
-    && mkdir -p /work /runs /opt/runner \
+    && mkdir -p /work /runs /opt/agent \
     && chown agent:agent /work /runs
 
-COPY --chmod=0644 mswea.yaml mswea-triage.yaml /opt/runner/
-COPY --chmod=0755 entrypoint.sh run-issue.sh run-triage.sh sanitize.py /opt/runner/
-COPY --chmod=0755 agent-pr /usr/local/bin/agent-pr
+ARG AGENT_VERSION=dev
+COPY --chmod=0644 config/ /opt/agent/config/
+COPY --chmod=0644 playbooks/ /opt/agent/playbooks/
+COPY --chmod=0755 entrypoint.sh run-fix.sh run-triage.sh sanitize.py policy.py /opt/agent/
+COPY --chmod=0755 agent-pr ci-wait /usr/local/bin/
+RUN echo "${AGENT_VERSION}" > /opt/agent/VERSION
 
 USER agent
 WORKDIR /work
@@ -61,4 +69,9 @@ ENV MSWEA_CONFIGURED=1 \
     GH_PROMPT_DISABLED=1 \
     PAGER=cat
 
-ENTRYPOINT ["/opt/runner/entrypoint.sh"]
+LABEL org.opencontainers.image.title="maintainer-agent" \
+      org.opencontainers.image.description="Sandboxed mini-swe-agent runner that triages issues and proposes changes in GitHub repositories" \
+      org.opencontainers.image.source="https://github.com/louisremi/maintainer-agent" \
+      org.opencontainers.image.version="${AGENT_VERSION}"
+
+ENTRYPOINT ["/opt/agent/entrypoint.sh"]

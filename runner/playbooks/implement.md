@@ -1,38 +1,29 @@
 # Playbook: implement a maintainer-approved issue (implement mode)
 
-A maintainer labelled a hand-written issue `agent-fix`. Maintainer comments in
-the task are authoritative and override the issue text. An earlier automated
-triage answer may be included: treat it as a hint, re-verify it.
+A maintainer labelled the issue `agent-fix`. Maintainer comments in the task
+are authoritative and override the issue text. An earlier automated triage
+answer may be included: treat it as a hint and re-verify it.
 
 1. **Decide whether to act.** Stop without changes (and say why in your final
-   summary) if the request is ambiguous, conflicts with an invariant in
-   `AGENTS.md`, needs secrets or infrastructure you do not have, or would need
-   edits under `.github/` (you cannot push those; describe the change instead).
-2. **Plan the smallest change** that satisfies the request, following the
-   conventions already in the repo:
-   - new apt tool → the apt list in `Dockerfile` + the `command -v` list in
-     `scripts/smoke.sh`;
-   - new release binary → `ARG <TOOL>_VERSION` with a `# renovate:` comment,
-     two `<TOOL>_SHA256_*` ARGs, the download in the `RUN` step, an entry in
-     `TOOLS` in `scripts/refresh-checksums.py`, then
-     `python3 scripts/refresh-checksums.py --tool <depName>`, plus a version
-     check in `scripts/smoke.sh`;
-   - new npm CLI → `tools/npm/package.json` (exact version), regenerate the
-     lockfile, decide `allowScripts` for any new install scripts, add the bin
-     to the Dockerfile bin check and to `scripts/smoke.sh`;
-   - new Python library → exact pin in `tools/python/requirements.txt`
-     (must have cp313 wheels for x86_64 and aarch64), import mapping in
-     `scripts/smoke.sh` if the module name differs;
-   - docs → keep README.md / AGENTS.md consistent with the change.
-3. **Verify locally:** `scripts/static-check.sh --online`.
-4. **Commit, push, open the PR, wait:**
+   summary) if the request is ambiguous, conflicts with the repository's
+   instructions, needs secrets or infrastructure you do not have, or would
+   touch a protected path (describe the change instead).
+2. **Understand the conventions.** Read the repository instructions, then
+   the code around the change and its tests. Match the existing style,
+   structure and naming. Prefer extending an existing pattern over inventing
+   a new one.
+3. **Plan the smallest change** that fully satisfies the request, including
+   tests and documentation the repository would expect for it.
+4. **Verify locally** with the checks listed in the task, or the repository's
+   own test/lint commands. Fix what you broke; do not disable checks.
+5. **Commit, push, open the draft PR, wait:**
    ```bash
    git add -A && git commit -m "feat: <what> (#<issue>)"
    git push origin HEAD:<branch>
    agent-pr
-   scripts/ci-wait.sh <branch>
+   ci-wait <branch>
    ```
-   Iterate on red CI (see `fix-ci-failure.md`). The PR is reviewed and merged
-   by a human; it closes the issue on merge.
-5. **Final summary:** what changed, what you verified, anything left for the
-   reviewer.
+   Iterate on red CI (see `ci-fix.md`). A maintainer reviews and merges the
+   PR; it closes the issue on merge.
+6. **Final summary:** what changed, what you verified, and anything left for
+   the reviewer.

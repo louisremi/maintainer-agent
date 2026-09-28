@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Container entrypoint. One image, several roles, all started by dispatch.sh:
+# Container entrypoint. One image, several roles, all started by the
+# dispatcher (dispatcher/dispatch.sh):
 #
 #   fix <n>            fix mode (model + write token, egress via the proxy)
 #   triage-fetch <n>   triage step 1: read-only token, NO model, snapshots context
 #   triage-agent <n>   triage step 2: model, NO token, egress = model endpoint only
 #   sanitize           stdin -> stdout, exit 3 = hold (run with --network none)
+#   policy             stdin YAML -> stdout JSON, exit 1 = invalid (--network none)
 #   egress             allow-list HTTP(S) proxy (tinyproxy) for the agent network
 set -euo pipefail
 
@@ -15,12 +17,14 @@ egress() {
   local conf=/tmp/tinyproxy.conf filter=/tmp/tinyproxy.filter h re
   : "${EGRESS_ALLOW:?EGRESS_ALLOW is required}"
   : > "${filter}"
+  set -f   # host patterns contain `*`: never glob them against the filesystem
   for h in ${EGRESS_ALLOW}; do
     [[ "${h}" =~ ^[A-Za-z0-9*.-]+$ ]] || { echo "egress: bad host pattern: ${h}" >&2; exit 2; }
     re="${h//./\\.}"
     re="${re//\*/[a-z0-9-]*}"
     printf '^%s$\n' "${re}" >> "${filter}"
   done
+  set +f
   {
     echo "Port 8888"
     echo "Timeout 1200"
@@ -41,10 +45,12 @@ egress() {
 }
 
 case "${1:-}" in
-  fix)          shift; exec /opt/runner/run-issue.sh "$@" ;;
-  triage-fetch) shift; exec /opt/runner/run-triage.sh fetch "$@" ;;
-  triage-agent) shift; exec /opt/runner/run-triage.sh agent "$@" ;;
-  sanitize)     shift; exec python3 /opt/runner/sanitize.py "$@" ;;
+  fix)          shift; exec /opt/agent/run-fix.sh "$@" ;;
+  triage-fetch) shift; exec /opt/agent/run-triage.sh fetch "$@" ;;
+  triage-agent) shift; exec /opt/agent/run-triage.sh agent "$@" ;;
+  sanitize)     shift; exec python3 /opt/agent/sanitize.py "$@" ;;
+  policy)       shift; exec python3 /opt/agent/policy.py "$@" ;;
   egress)       egress ;;
-  *) echo "usage: {fix|triage-fetch|triage-agent} <issue-number> | sanitize | egress" >&2; exit 2 ;;
+  version)      cat /opt/agent/VERSION ;;
+  *) echo "usage: {fix|triage-fetch|triage-agent} <issue-number> | sanitize | policy | egress | version" >&2; exit 2 ;;
 esac

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Regression tests for agent-runner/sanitize.py (run by scripts/static-check.sh)."""
+"""Regression tests for runner/sanitize.py."""
 
 import os
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SANITIZE = os.path.join(HERE, "..", "sanitize.py")
-REPO = "louisremi/deepseek-harness-docker-dev"
+SANITIZE = os.path.join(HERE, "..", "runner", "sanitize.py")
+REPO = "example-org/example-repo"
 
 
 def run(text: str, **env: str) -> tuple[int, str, str]:
@@ -37,7 +37,7 @@ check("no <img>", "<img" not in out)
 check("no <a href>", "<a " not in out)
 check("no control marker", "<!-- agent" not in out)
 check("image removed", "[image removed: x]" in out)
-check("mention neutralised", "`@louisremi`" in out)
+check("mention neutralised", "`@someone`" in out)
 check("cross-repo ref neutralised", "`other/repo#3`" in out)
 check("same-repo #ref kept", " #12." in out)
 check("allowed link kept", f"[good](https://github.com/{REPO}/blob/abc/Dockerfile#L1-L5)" in out)

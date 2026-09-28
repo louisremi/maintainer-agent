@@ -1,0 +1,15 @@
+# Add this job to the repository's CI workflow (triggered on pull_request),
+# then make `review-gate / gate` a required status check. Create two
+# environments: `agent-review` (required reviewers = maintainers) and
+# `no-review` (no rules). Pin to a released commit SHA.
+jobs:
+  review-gate:
+    uses: louisremi/maintainer-agent/.github/workflows/review-gate.yml@COMMIT_SHA # vX.Y.Z
+    with:
+      bot_branches: "renovate/*"
+      bot_authors: "29139614+renovate[bot]@users.noreply.github.com"
+      ci_workflow: ci.yml
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write

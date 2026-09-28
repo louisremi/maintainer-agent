@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Helper available to the repair agent (on PATH as `agent-pr`).
-# Opens the pull request for the current work branch, once the branch has at
-# least one pushed commit. Idempotent: prints the existing PR if there is one.
+# Helper available to the agent (on PATH as `agent-pr`).
+# Opens the draft pull request for the current work branch, once the branch
+# has at least one pushed commit. Idempotent: prints the existing PR if any.
 #
-# Configured by run-issue.sh through the environment:
-#   AGENT_ISSUE, AGENT_BRANCH, AGENT_PR_TITLE
-# Agent PRs are never auto-merged: the required `review-gate` check waits for
-# a maintainer to approve the `agent-review` environment.
+# Configured by run-fix.sh through the environment:
+#   AGENT_ISSUE, AGENT_BRANCH, AGENT_PR_TITLE, AGENT_BASE (default branch)
+# Agent PRs are never auto-merged: the repository's required `review-gate`
+# check waits for a maintainer to approve the `agent-review` environment.
 set -euo pipefail
 
 : "${AGENT_BRANCH:?agent-pr: AGENT_BRANCH not set (this branch already has a PR)}"
 : "${AGENT_ISSUE:?}"
+base="${AGENT_BASE:?}"
 title="${AGENT_PR_TITLE:-fix: issue #${AGENT_ISSUE}}"
 
 existing="$(gh pr list --head "${AGENT_BRANCH}" --state open --json number,url --jq '.[0].url // empty')"
@@ -19,24 +20,24 @@ if [[ -n "${existing}" ]]; then
   exit 0
 fi
 
-git fetch --quiet origin main "${AGENT_BRANCH}" 2>/dev/null || {
+git fetch --quiet origin "${base}" "${AGENT_BRANCH}" 2>/dev/null || {
   echo "agent-pr: branch ${AGENT_BRANCH} is not on origin yet; commit and 'git push origin HEAD:${AGENT_BRANCH}' first" >&2
   exit 1
 }
-if [[ "$(git rev-list --count "origin/main..origin/${AGENT_BRANCH}")" == 0 ]]; then
-  echo "agent-pr: origin/${AGENT_BRANCH} has no commits beyond main; push your change first" >&2
+if [[ "$(git rev-list --count "origin/${base}..origin/${AGENT_BRANCH}")" == 0 ]]; then
+  echo "agent-pr: origin/${AGENT_BRANCH} has no commits beyond ${base}; push your change first" >&2
   exit 1
 fi
 
-body="$(cat <<EOF
-Automated change by the repair agent for #${AGENT_ISSUE}. **Needs a maintainer's review**
+body="$(cat <<EOB
+Automated change proposed by maintainer-agent for #${AGENT_ISSUE}. **Needs a maintainer's review**
 (approve the \`agent-review\` environment on the \`review-gate\` check, then merge).
 
 Closes #${AGENT_ISSUE}
 
-$(git log --format='- %s' "origin/main..origin/${AGENT_BRANCH}")
-EOF
+$(git log --format='- %s' "origin/${base}..origin/${AGENT_BRANCH}")
+EOB
 )"
-url="$(gh pr create --base main --head "${AGENT_BRANCH}" --title "${title}" --body "${body}")"
+url="$(gh pr create --draft --base "${base}" --head "${AGENT_BRANCH}" --title "${title}" --body "${body}")"
 gh pr edit "${url}" --add-label agent-review >/dev/null 2>&1 || true   # informational; the gate is the environment
-echo "opened ${url} (a maintainer will review and merge it)"
+echo "opened draft ${url} (a maintainer will review and merge it)"

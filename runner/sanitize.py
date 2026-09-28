@@ -30,8 +30,9 @@ which have no place in a first answer and are the usual shape of exfiltrated
 data.
 
 Configuration (environment):
-  REPO                          owner/name whose github.com URLs are allowed
-  SANITIZE_EXTRA_LINK_PREFIXES  space-separated extra allowed URL prefixes
+  REPO                          owner/name whose github.com URLs are allowed (required)
+  SANITIZE_EXTRA_LINK_PREFIXES  space-separated extra allowed https URL prefixes
+                                (the repository policy's `links`)
   SANITIZE_MAX_CHARS            hold above this length (default 12000)
 """
 
@@ -41,12 +42,9 @@ import os
 import re
 import sys
 
-REPO = os.environ.get("REPO", "louisremi/deepseek-harness-docker-dev")
-EXTRA_PREFIXES = os.environ.get(
-    "SANITIZE_EXTRA_LINK_PREFIXES",
-    "https://github.com/runzhliu/deepseek-harness-docker/ "
-    "https://hub.docker.com/r/louisremi/deepseek-harness-dev",
-).split()
+REPO = os.environ.get("REPO", "")
+EXTRA_PREFIXES = [p for p in os.environ.get("SANITIZE_EXTRA_LINK_PREFIXES", "").split()
+                  if p.startswith("https://") and len(p) > len("https://x.y")]
 MAX_CHARS = int(os.environ.get("SANITIZE_MAX_CHARS", "12000"))
 
 # Formatting-only tags that are kept when they carry no attributes.
@@ -191,6 +189,9 @@ def sanitize(text: str) -> str:
 
 
 def main() -> int:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPO):
+        print("sanitize.py: REPO=owner/name is required", file=sys.stderr)
+        return 2
     if len(sys.argv) > 1:
         print(__doc__.split("\n\n")[0], file=sys.stderr)
         return 2

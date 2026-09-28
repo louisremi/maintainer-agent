@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # Wait for the CI checks of the pull request whose head is <branch> and report
 # the outcome. On failure, print the tail of the failed job logs so the caller
-# (usually the repair agent) can act on it.
+# (usually the agent) can act on it.
 #
-#   scripts/ci-wait.sh <branch> [timeout-seconds]      default timeout: 5400
+#   ci-wait <branch> [timeout-seconds]      default timeout: 5400
 #
-# Exit codes: 0 all checks green, 1 at least one check failed, 2 no PR / timed
-# out / other error. Needs `gh` authenticated for this repository.
+# Checks that wait for a human (the `review-gate` jobs, or anything whose name
+# matches CI_WAIT_IGNORE, an extended regex) are ignored: they stay pending
+# until a maintainer approves, by design.
+#
+# Exit codes: 0 all other checks green, 1 at least one failed, 2 no PR / timed
+# out / other error. Needs `gh` authenticated for the repository (GH_REPO).
 set -euo pipefail
 
-branch="${1:?usage: ci-wait.sh <branch> [timeout-seconds]}"
+branch="${1:?usage: ci-wait <branch> [timeout-seconds]}"
 timeout_s="${2:-5400}"
+ignore="${CI_WAIT_IGNORE:-^review-gate( / .*)?$}"
 
 pr="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number // empty')"
 if [[ -z "${pr}" ]]; then
@@ -20,32 +25,36 @@ fi
 head_sha="$(gh pr view "${pr}" --json headRefOid --jq .headRefOid)"
 echo "waiting for CI on PR #${pr} (${branch} @ ${head_sha:0:12}), timeout ${timeout_s}s"
 
-# Checks can take a few seconds to register after a push.
 deadline=$(( $(date +%s) + timeout_s ))
-until [[ "$(gh pr checks "${pr}" --json name --jq 'length' 2>/dev/null || echo 0)" -gt 0 ]]; do
-  (( $(date +%s) < deadline )) || { echo "no checks appeared before timeout" >&2; exit 2; }
-  sleep 15
+checks() {  # "name<TAB>bucket" for every check that is not ignored
+  gh pr checks "${pr}" --json name,bucket --jq '.[] | "\(.name)\t\(.bucket)"' 2>/dev/null \
+    | awk -F'\t' -v re="${ignore}" '$1 !~ re'
+}
+
+state=""
+while :; do
+  if (( $(date +%s) >= deadline )); then
+    echo "timed out waiting for CI on PR #${pr}" >&2
+    printf '%s\n' "${state}" >&2
+    exit 2
+  fi
+  state="$(checks || true)"
+  if [[ -z "${state}" ]]; then sleep 15; continue; fi
+  if awk -F'\t' '$2 == "fail" || $2 == "cancel" {f=1} END {exit !f}' <<<"${state}"; then break; fi
+  if ! awk -F'\t' '$2 == "pending" {f=1} END {exit !f}' <<<"${state}"; then
+    printf '%s\n' "${state}"
+    echo "CI green for PR #${pr}"
+    exit 0
+  fi
+  sleep 30
 done
 
-remaining=$(( deadline - $(date +%s) ))
-if timeout "${remaining}" gh pr checks "${pr}" --watch --fail-fast --interval 30 >/dev/null 2>&1; then
-  gh pr checks "${pr}" || true
-  echo "CI green for PR #${pr}"
-  exit 0
-fi
-rc=$?
-gh pr checks "${pr}" || true
-if (( rc == 124 )); then
-  echo "timed out waiting for CI on PR #${pr}" >&2
-  exit 2
-fi
-
+printf '%s\n' "${state}"
 echo
 echo "=== failed job logs (tail) ==="
-run_id="$(gh run list --branch "${branch}" --workflow ci.yml --commit "${head_sha}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
-if [[ -n "${run_id}" ]]; then
+for run_id in $(gh run list --branch "${branch}" --commit "${head_sha}" --limit 20 \
+                 --json databaseId,conclusion --jq '.[] | select(.conclusion == "failure") | .databaseId'); do
+  echo "--- run ${run_id}"
   gh run view "${run_id}" --log-failed 2>/dev/null | tail -n 300 || true
-else
-  echo "(could not locate the CI run for ${head_sha})"
-fi
+done
 exit 1

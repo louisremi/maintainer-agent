@@ -1,0 +1,54 @@
+// Renovate config (Mend Renovate GitHub App). Keeps the runner image pins
+// (mini-swe-agent, gh, hadolint, base image) and the workflow actions current.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended', ':semanticCommitTypeAll(chore)'],
+  labels: ['renovate'],
+  minimumReleaseAge: '3 days',
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Dockerfile ARG pins annotated with a renovate comment',
+      managerFilePatterns: ['/(^|/)Dockerfile$/'],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>[a-z.-]+) depName=(?<depName>\\S+)\\s+ARG [A-Z0-9_]+=(?<currentValue>\\S+)\\s',
+      ],
+    },
+    {
+      customType: 'regex',
+      description: 'Linter versions installed in CI',
+      managerFilePatterns: ['/^\\.github/workflows/ci\\.yml$/'],
+      matchStrings: [
+        'HADOLINT_VERSION: (?<currentValue>\\S+)',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'hadolint/hadolint',
+      extractVersionTemplate: '^v(?<version>.*)$',
+    },
+    {
+      customType: 'regex',
+      description: 'Linter versions installed in CI',
+      managerFilePatterns: ['/^\\.github/workflows/ci\\.yml$/'],
+      matchStrings: [
+        'ACTIONLINT_VERSION: (?<currentValue>\\S+)',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'rhysd/actionlint',
+      extractVersionTemplate: '^v(?<version>.*)$',
+    },
+  ],
+  packageRules: [
+    {
+      matchDatasources: ['github-releases'],
+      matchManagers: ['custom.regex'],
+      matchFileNames: ['runner/Dockerfile'],
+      extractVersion: '^v(?<version>\\d.*)$',
+    },
+    {
+      description: 'GitHub Actions: group, weekly',
+      matchManagers: ['github-actions'],
+      groupName: 'github actions',
+      schedule: ['* 0-5 * * 1'],
+    },
+  ],
+}

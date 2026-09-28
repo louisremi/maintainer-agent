@@ -1,0 +1,53 @@
+# .github/maintainer-agent.yml: how maintainer-agent behaves in this
+# repository. Everything is optional; delete what you do not need. The file
+# is read from the default branch and validated strictly (unknown keys are
+# errors). It is protected: the agent never modifies it.
+version: 1
+
+# Files the agent reads first. Default: the first of AGENTS.md,
+# CONTRIBUTING.md, README.md that exists.
+instructions: [AGENTS.md]
+
+# Repository-specific playbooks, overriding the generic ones shipped with the
+# agent (triage: first answers; implement: agent-fix issues; ci-fix: red CI).
+playbooks:
+  triage: docs/agent/triage.md
+  implement: docs/agent/implement-issue.md
+  ci-fix: docs/agent/fix-ci-failure.md
+
+# Commands the agent runs before every push (fix mode).
+checks:
+  - make test
+
+# Extra hosts the fix-mode agent may reach (package registries, release
+# downloads...). GitHub and the model endpoint are always allowed. Triage
+# never gets network access beyond the model.
+egress:
+  - registry.npmjs.org
+  - pypi.org
+  - files.pythonhosted.org
+
+# Extra https URL prefixes allowed as links in posted answers. Links to this
+# repository are always allowed; every other link is turned into plain text.
+links:
+  - https://example.com/docs/
+
+# Paths the agent must never modify, in addition to .github/** and this file.
+protected_paths:
+  - LICENSE
+
+# Dependency-bot branches the agent may push CI fixes to, and the bot's
+# commit author(s). PRs from these branches with only bot commits and green
+# CI skip human review; anything else waits for a maintainer.
+bot_branches: [renovate/*]
+bot_authors: ["29139614+renovate[bot]@users.noreply.github.com"]
+
+triage:
+  enabled: true
+  max_age_days: 14   # maintainer issues older than this are not answered automatically
+  max_attempts: 2    # failed drafting attempts per issue before giving up
+
+fix:
+  enabled: true
+  max_attempts: 2    # runs per round before `needs-human`
+  step_limit: 80     # capped by the host's max_step_limit

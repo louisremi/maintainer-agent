@@ -1,0 +1,136 @@
+name: review-gate
+
+# Reusable workflow: the human-review gate for code maintainer-agent (or
+# anyone other than your dependency bot) may have written. Call it from the
+# repository's CI on pull_request and make its job a required status check:
+#
+#   jobs:
+#     review-gate:
+#       uses: louisremi/maintainer-agent/.github/workflows/review-gate.yml@<sha> # vX.Y.Z
+#       with:
+#         bot_branches: "renovate/*"
+#         bot_authors: "29139614+renovate[bot]@users.noreply.github.com"
+#       permissions: {contents: read, actions: read, pull-requests: write}
+#
+# Required check name: `review-gate / gate`.
+#
+# Only a *pure bot PR* skips review (environment `no-review`, no rules); every
+# other PR waits for a maintainer to approve the `agent-review` environment.
+# A PR is pure bot when ALL hold:
+#   - its head branch matches `bot_branches` in this repository;
+#   - CI (`ci_workflow`) has not failed on it since the PR was opened (a
+#     failure is what hands a bot branch to the agent);
+#   - every commit is authored by one of `bot_authors`;
+#   - if `bot_pr_author` is set, the PR was opened by that login. Set it once
+#     the bot runs under its own identity (e.g. a GitHub App `<app>[bot]`):
+#     that cannot be forged by a token that can push, unlike branch names or
+#     commit authors.
+# The agent's token has no actions:write, environments, deployments,
+# administration or workflows permission, so it cannot approve or edit this.
+
+on:
+  workflow_call:
+    inputs:
+      bot_branches:
+        description: Space-separated branch globs of the dependency bot (e.g. "renovate/* dependabot/*"). Empty = every PR needs review.
+        type: string
+        default: ""
+      bot_authors:
+        description: Space-separated commit author emails of the dependency bot.
+        type: string
+        default: ""
+      bot_pr_author:
+        description: Login that must have opened a pure bot PR (optional, recommended).
+        type: string
+        default: ""
+      ci_workflow:
+        description: File name of the CI workflow whose failures hand a bot branch to the agent.
+        type: string
+        default: ci.yml
+      review_environment:
+        description: Environment with required reviewers.
+        type: string
+        default: agent-review
+      pass_environment:
+        description: Environment without rules, used when no review is needed.
+        type: string
+        default: no-review
+
+permissions: {}
+
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    outputs:
+      environment: ${{ steps.decide.outputs.environment }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD: ${{ github.event.pull_request.head.ref }}
+      HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      OPENED: ${{ github.event.pull_request.created_at }}
+      PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      BOT_BRANCHES: ${{ inputs.bot_branches }}
+      BOT_AUTHORS: ${{ inputs.bot_authors }}
+      BOT_PR_AUTHOR: ${{ inputs.bot_pr_author }}
+      CI_WORKFLOW: ${{ inputs.ci_workflow }}
+      REVIEW_ENV: ${{ inputs.review_environment }}
+      PASS_ENV: ${{ inputs.pass_environment }}
+    steps:
+      - name: Decide whether a human must review
+        id: decide
+        run: |
+          set -euo pipefail
+          if [[ -z "${PR}" ]]; then
+            echo "not a pull_request event; nothing to gate" >> "$GITHUB_STEP_SUMMARY"
+            echo "environment=${PASS_ENV}" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          reasons=()
+          is_bot_branch=false
+          set -f
+          for g in ${BOT_BRANCHES}; do
+            # shellcheck disable=SC2053
+            [[ "${HEAD}" == ${g} ]] && is_bot_branch=true
+          done
+          set +f
+          if [[ "${HEAD_REPO}" != "${GH_REPO}" || "${is_bot_branch}" != true ]]; then
+            reasons+=("not a dependency-bot branch (${HEAD})")
+          else
+            if [[ -n "${BOT_PR_AUTHOR}" && "${PR_AUTHOR}" != "${BOT_PR_AUTHOR}" ]]; then
+              reasons+=("opened by ${PR_AUTHOR}, not ${BOT_PR_AUTHOR}")
+            fi
+            failed="$(gh run list --branch "${HEAD}" --workflow "${CI_WORKFLOW}" --limit 100 --json conclusion,createdAt \
+              --jq "[.[] | select(.conclusion == \"failure\" and .createdAt >= \"${OPENED}\")] | length")"
+            (( failed > 0 )) && reasons+=("CI failed on this branch ${failed} time(s), so the agent may have pushed to it")
+            authors_json="$(jq -cn --arg a "${BOT_AUTHORS}" '$a | split(" ") | map(select(. != ""))')"
+            foreign="$(gh api "repos/${GH_REPO}/pulls/${PR}/commits?per_page=100" \
+              | jq --argjson a "${authors_json}" '[.[] | select(.commit.author.email as $e | $a | index($e) | not)] | length')"
+            (( foreign > 0 )) && reasons+=("${foreign} commit(s) not authored by the dependency bot")
+          fi
+          if (( ${#reasons[@]} )); then
+            echo "environment=${REVIEW_ENV}" >> "$GITHUB_OUTPUT"
+            printf -- '- %s\n' "${reasons[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+            if [[ "${is_bot_branch}" == true || "${HEAD}" == maintainer-agent/* ]]; then
+              gh pr edit "${PR}" --add-label agent-review 2>/dev/null || true
+            fi
+          else
+            echo "environment=${PASS_ENV}" >> "$GITHUB_OUTPUT"
+            echo "Pure dependency-bot PR: no human review required." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  gate:
+    needs: policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    # The review environment has required reviewers (the maintainers);
+    # approving it is the human sign-off. The pass environment has no rules.
+    environment: ${{ needs.policy.outputs.environment }}
+    steps:
+      - run: echo "review gate passed (environment ${{ needs.policy.outputs.environment }})"

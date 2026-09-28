@@ -1,0 +1,26 @@
+{
+  "_comment": "Host config for dispatch.sh. No secrets here: token_env / readonly_token_env name variables defined in the env file (DISPATCH_ENV).",
+  "defaults": {
+    "runner_image": "louisremi/maintainer-agent:v0.1.0",
+    "llm_api_base": "http://127.0.0.1:8000/v1",
+    "llm_model": "openai/your-model",
+    "git_author": "maintainer-agent <maintainer-agent@users.noreply.github.com>",
+    "max_step_limit": 120,
+    "max_attempts_cap": 5
+  },
+  "repos": [
+    {
+      "repo": "your-org/your-repo",
+      "token_env": "GH_TOKEN_YOUR_REPO",
+      "readonly_token_env": "GH_TOKEN_YOUR_REPO_RO",
+      "modes": ["triage", "fix"],
+      "post": true
+    },
+    {
+      "repo": "someone-else/their-repo",
+      "readonly_token_env": "GH_TOKEN_PUBLIC_RO",
+      "modes": ["triage"],
+      "post": false
+    }
+  ]
+}

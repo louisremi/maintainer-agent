@@ -1,39 +1,45 @@
 # Playbook: first answer to a new issue (triage mode)
 
 You are read-only and offline. Your only output is `/tmp/answer.md`, which
-the host sanitises and posts as one comment. Budget: about 30 steps. Spend
-most on evidence, not prose.
+is sanitised and posted as one comment. Budget: about 30 steps. Spend most
+of them on evidence, not prose.
 
 There is no GitHub access, internet or Docker. The repository is at
 `/work/repo` (read-only) and a snapshot of the project's GitHub state is in
 `/work/context/`: `issues.tsv`, `prs.tsv`, `runs.tsv`, `logs/run-<id>.log`,
-`refs/<n>.md`, `dockerhub-tags.tsv`.
+`refs/<n>.md`, `policy.json`.
+
+## Orient yourself
+
+1. Read the repository instructions named in the task (AGENTS.md,
+   CONTRIBUTING.md or README.md).
+2. Find where the issue's subject lives: `git ls-files | head -200`,
+   `grep -rn "<keyword>" --exclude-dir=.git .`.
 
 ## Classify
 
 | The issue is… | Look at | Answer with |
 | --- | --- | --- |
-| **"Build/CI is failing"** | `runs.tsv`, `logs/run-<id>.log`, the failing step in `.github/workflows/ci.yml` or `scripts/smoke.sh` | The failing check, the likely cause, and the fix (file + change). Mention that an `agent-fix` label hands it to the repair agent. |
-| **"Tool X missing / wrong version"** | `Dockerfile`, `tools/npm/package.json`, `tools/python/requirements.txt`, open Renovate PRs in `prs.tsv` | Where X is pinned (or that it is not bundled), whether a Renovate PR is pending, and what adding it would take (AGENTS.md invariants: exact pin, checksums for both arches, `allowScripts`). |
-| **"Please add tool X"** (feature request) | HolyClaude slim scope in `README.md`; image-size and maintenance cost | Whether it fits the scope; exactly how it would be added (which file, which install method, which Renovate datasource). |
-| **Runtime problem** (sandbox prompts, login/cookie, bwrap errors, permissions) | `compose.example.yaml` (`security_opt`), the patch comments at the top of `Dockerfile`, `scripts/smoke.sh` | The documented requirement they are likely missing (e.g. `seccomp=unconfined` + `systempaths=unconfined` for bwrap), and which logs or `docker inspect` output would confirm it. |
-| **Upstream DSH behaviour** | Whether it involves our two patches; otherwise it belongs upstream | Say it is upstream behaviour and point to the runzhliu/deepseek-harness-docker repository; do not speculate about their internals. |
+| **Build / CI failing** | `runs.tsv`, `logs/run-<id>.log`, the workflow files under `.github/workflows/` | The failing step, the likely cause, and the fix (file + change). Mention that an `agent-fix` label hands it to the agent. |
+| **Bug report** | The code path the report describes; tests covering it; recent commits touching it (`git log -p -n 5 -- FILE`) | Whether the behaviour is a bug, where it comes from (file + lines), and the fix you would propose. |
+| **Feature request** | The README / docs describing the project's scope; similar existing features | Whether it fits the scope; exactly what adding it would involve (files, approach). |
+| **Question / usage** | README, docs, examples, configuration files | The answer, with links to the relevant docs or code. |
+| **Dependency / version** | Manifests and lockfiles; open bot PRs in `prs.tsv` | Where it is pinned, whether an update is pending, what changing it involves. |
 | **Duplicate** | `grep -i "<keywords>" /work/context/issues.tsv` | Reference the original as `#<n>`. |
-| **Unclear** | nothing more | Ask the 1–3 specific questions that would make it actionable (image tag, host kernel, compose snippet, exact error). |
+| **Unclear** | nothing more | Ask the 1–3 specific questions that would make it actionable (version, platform, exact error, reproduction steps). |
 
 ## Evidence rules
 
-- Cite files as permalinks with line ranges (base URL is given in the task).
-  Check line numbers with `nl -ba FILE`.
+- Cite files as permalinks with line ranges (the base URL is given in the
+  task). Check line numbers with `nl -ba FILE`.
 - Quote at most a few lines of logs; reference the run instead of pasting it.
-- If you could not verify something (e.g. it needs Docker or live GitHub
-  data), say so plainly.
+- If you could not verify something (e.g. it needs network, Docker, or live
+  GitHub data), say so plainly.
 
 ## Format
 
 Plain GitHub Markdown. No images, no HTML, no links outside this repository
-(the host removes them), no long encoded strings (the host then refuses to
-post the answer).
+(they are removed), no long encoded strings (the answer is then held back).
 
 ## Never
 

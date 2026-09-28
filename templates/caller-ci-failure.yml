@@ -1,0 +1,23 @@
+# .github/workflows/ci-failure.yml: turn red CI runs on the listed branches
+# into `agent-fix` issues for maintainer-agent (opt-in CI repair).
+# Pin to a released commit SHA.
+name: CI failure to issue
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  ci-failure:
+    if: github.event.workflow_run.head_repository.full_name == github.repository
+    uses: louisremi/maintainer-agent/.github/workflows/ci-failure-issue.yml@COMMIT_SHA # vX.Y.Z
+    with:
+      branches: "main renovate/* maintainer-agent/main-fix-*"
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      actions: read

@@ -1,218 +1,208 @@
-# Issue agent (Nasbrico)
+# maintainer-agent
 
-A cron job on **nasbrico** runs [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) v2
-on **Qwen3.8 27B** (vLLM on NASBIS, `http://100.67.12.33:18982/v1`) against this
-repository's issues. It runs one job at a time, because the model serves a
-single request. There are two modes:
+A self-hosted maintainer agent for GitHub repositories. A cron job
+dispatcher runs [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
+v2 against a local or remote OpenAI-compatible model and, for every
+repository you point it at:
 
-| Mode | Picks up | Token next to the model | Network next to the model | Output |
-| --- | --- | --- | --- | --- |
-| **fix** (priority) | open issues labelled `agent-fix` | write (contents, issues, PRs), **no workflows** | allow-list: model, GitHub, package registries | commits on a branch, a PR (**human review**), a result comment |
-| **triage** | new issues without a first answer (trust gate below) | **none** | **model endpoint only** | one first-answer comment, sanitised and posted by the host |
+- **answers new issues** with a sandboxed, read-only investigation (one first
+  answer per issue, with links to the exact lines);
+- **proposes changes** as a *draft* pull request when a maintainer labels an
+  issue `agent-fix`;
+- optionally **repairs red CI** on dependency-bot branches or the default
+  branch, for repositories that opt in with a workflow.
+
+Nothing the agent writes is merged without a human: a required
+`review-gate` check waits for a maintainer's approval.
 
 ```
-cron ─► dispatch.sh ─┬─ review sweep: PRs with non-Renovate commits → auto-merge off, `agent-review`
-                     ├─ agent-fix issue? ─► [fix <n>] ─► run-issue.sh ─► mini (mswea.yaml)
-                     │                        internal network ─► egress proxy (allow-list)
-                     │                      ─► ref audit (unexpected branch/tag changes → needs-human)
-                     └─ else new issue?  ─► [triage-fetch <n>]  read-only token, no model ─► ctx/ snapshot
-                                          ─► [triage-agent <n>]  no token, read-only, egress = model only ─► draft
-                                          ─► [sanitize]          --network none ─► ok: post │ suspicious: `triage-held`
+cron ─► dispatch.sh (host) ── for every repo in repos.json ──────────────────────────────┐
+         │  policy: .github/maintainer-agent.yml (validated, network-less)              │
+         │  labels + review sweep (PRs with agent commits: auto-merge off, agent-review) │
+         ├─ oldest `agent-fix` issue across repos ─► [fix <n>]  write token, egress allow-list
+         │                                           ─► ref audit + protected-paths audit
+         └─ else oldest new issue ─► [triage-fetch]  read-only token, no model ─► snapshot
+                                   ─► [triage-agent] no token, read-only, egress = model only ─► draft
+                                   ─► [sanitize]     --network none ─► post │ keep draft │ hold
 ```
 
-### Fix mode: three cases
+One model job runs per tick across all repositories, so a single-GPU model
+server is enough.
 
-| Issue | Created by | Agent works on | PR |
-| --- | --- | --- | --- |
-| CI failed on a Renovate branch | `failure-to-issue.yml` (hidden marker) | the existing `renovate/*` branch | existing Renovate PR; auto-merge resumes when green |
-| CI failed on `main` | `failure-to-issue.yml` | new `agent/main-fix-<n>` | opened by `agent-pr` after the first push |
-| Any issue a maintainer labels `agent-fix` | a human | new `agent/issue-<n>` | opened by `agent-pr` after the first push, `Closes #<n>` |
+## Watching a repository
 
-In every case the result waits for you: the required `review-gate` check
-holds any PR that is not a pure Renovate bump until you approve the
-`agent-review` environment ("Review deployments" on the PR's checks). A
-Renovate PR whose CI once failed stays gated even after it goes green.
+1. **Tokens** (fine-grained PATs, repository access = only that repository):
+   - read-only: *Contents*, *Issues*, *Pull requests*, *Actions* = read.
+     Enough for triage. For repositories you do not maintain, use
+     `"post": false`: answers are kept as drafts on the host, never posted.
+   - write (optional, for posting and `fix` mode): *Contents*, *Issues*,
+     *Pull requests* = read/write, *Actions* = read. **Never** *Workflows*,
+     *Administration*, *Environments*, *Deployments* or *Secrets*.
+2. **Host config**: add the repository to `repos.json` (see
+   [dispatcher/repos.example.json](dispatcher/repos.example.json)) and the
+   token variables to the env file.
+3. **Optional policy** in the repository:
+   `.github/maintainer-agent.yml` ([template](templates/maintainer-agent.yml)):
+   instructions to read first, repository playbooks, checks to run before a
+   push, extra egress hosts for fix mode, extra links allowed in answers,
+   protected paths, and the dependency bot's branches and author.
+4. **For `fix` mode**, in the repository (the gate is what makes agent PRs
+   safe to have):
+   - add the reusable review gate to CI
+     ([caller template](templates/caller-review-gate.yml)) and make
+     `review-gate / gate` a **required** check, with branch protection
+     enforced for administrators;
+   - create the environments `agent-review` (required reviewers =
+     maintainers) and `no-review` (no rules);
+   - optional CI repair: add the CI-failure workflow
+     ([caller template](templates/caller-ci-failure.yml)).
 
-A PR is never opened empty: the `agent-pr` helper refuses until the branch
-has a commit. Maintainer comments on the issue are passed to the agent as
-authoritative instructions. An earlier triage answer is passed as a hint.
+Pin the reusable workflows to a release commit SHA
+(`uses: louisremi/maintainer-agent/.github/workflows/review-gate.yml@<sha> # v0.1.0`).
 
-Attempts are counted from the `<!-- agent-run: fix -->` comments. After
-`MAX_ATTEMPTS` (default 2) the issue gets `needs-human`. Removing that label
-starts a fresh round.
+## Behaviour per repository
 
-### Triage mode and the trust gate
-
-The repository is public and issue text goes straight into the model's
-prompt, so the dispatcher only triages:
-
-- issues opened by the **owner, members or collaborators** (GitHub's
-  `author_association`) in the last `TRIAGE_MAX_AGE_DAYS` (14);
-- **anyone else's issue only after a maintainer adds the `triage` label.**
-  Only people with triage/write access can apply labels.
-
-It never triages bot issues (such as the Renovate dashboard, which also gets
-`no-triage`), CI-failure issues, issues labelled `agent-fix`, `needs-human`
-or `no-triage`, or issues that already have an answer. Each issue is answered
-once; label it `retriage` for a fresh answer. After `TRIAGE_MAX_ATTEMPTS`
-failed drafts it stops trying.
-
-If the sanitiser finds the draft suspicious, nothing is posted and the issue
-gets **`triage-held`**: read `answer.safe.md`, `answer.safe.md.reasons` and
-the trajectory in the run directory, then either post by hand or remove the
-label to let it try again.
-
-The playbooks the agent reads are
-[docs/agent/triage.md](../docs/agent/triage.md) and
-[docs/agent/implement-issue.md](../docs/agent/implement-issue.md).
-
-## Files
-
-| File | Where it runs | Role |
+| | Triage | Fix |
 | --- | --- | --- |
-| `Dockerfile` | build once, pull on nasbrico | Python 3.13 + mini-swe-agent (pinned) + gh + hadolint + shellcheck + node/npm + tinyproxy |
-| `entrypoint.sh` | container | roles: `fix`, `triage-fetch`, `triage-agent`, `sanitize`, `egress` |
-| `run-issue.sh`, `mswea.yaml` | container | fix mode |
-| `run-triage.sh`, `mswea-triage.yaml` | container | triage: `fetch` and `agent` phases |
-| `sanitize.py` (+ `tests/`) | container | cleans agent Markdown before it is posted; exit 3 = hold |
-| `agent-pr` | container, on PATH | opens the PR once the branch has commits (never auto-merged) |
-| `dispatch.sh` | nasbrico host, cron | queues, trust gate, sandboxes, review sweep, ref audit, posting |
+| Triggered by | new issue from OWNER/MEMBER/COLLABORATOR (≤ `max_age_days`), or a maintainer's `triage` label; `retriage` for a fresh answer | `agent-fix` label (humans), or a CI-failure issue |
+| Needs | read-only token | write token + review gate |
+| Output | one comment (or a host-side draft with `post: false`) | commits on `maintainer-agent/issue-<n>` / `main-fix-<n>`, or on the bot branch, and a **draft PR** |
+| Gives up | after `triage.max_attempts` failed drafts | after `fix.max_attempts` runs → `needs-human` |
+
+Labels (created automatically in repositories with a write token): `agent-fix`,
+`agent-in-progress`, `needs-human`, `triage`, `retriage`, `no-triage`,
+`triage-held`, `agent-review`.
+
+Playbooks: the generic ones in [runner/playbooks/](runner/playbooks/), or the
+repository's own via `playbooks:` in the policy.
 
 ## Security model
 
 The threat: anyone can open an issue, and CI logs or upstream release notes
 can carry text too. Research on LLM repair agents found that ~90% of crafted
 bug reports steered the agent, and filters caught about half
-([arXiv 2509.05372](https://arxiv.org/abs/2509.05372)); the Cline triage bot
+([arXiv 2509.05372](https://arxiv.org/abs/2509.05372)); an issue triage bot
 was turned into a supply-chain attack by a single issue title
 ([Clinejection](https://simonwillison.net/2026/mar/6/clinejection/)). So the
 design assumes **the model will sometimes obey injected text** and limits what
 that can achieve, rather than relying on the prompt. mini-swe-agent itself has
 no permission system (every command is `subprocess.run` in bash), so the
-container is the boundary.
+container is the boundary. The layering follows GitHub's
+[agentic workflows security architecture](https://github.github.com/gh-aw/introduction/architecture/)
+(read-only agent, separate writer, egress firewall, output checks).
 
 | Layer | Triage | Fix |
 | --- | --- | --- |
-| Who can trigger it | trust gate (maintainer issues, or `triage` label) | `agent-fix` label (maintainers only) or CI failures |
-| Credentials next to the model | **none** (the read-only token is used by a separate, model-less fetch container) | write PAT, no workflows/admin/environments/deployments |
-| Filesystem | read-only root; repo and context snapshot mounted read-only; writes only `/tmp` and its output dir | writable clone; no host mounts except the run dir |
-| Network | `--internal` Docker network + tinyproxy allow-list: **the model endpoint only**; no DNS | same, allow-list = model, GitHub, npm/PyPI, Docker Hub, release-binary hosts (`EGRESS_FIX_ALLOW`) |
-| LAN / tailnet / Unraid services | unreachable (only the model host is allowed) | unreachable (idem) |
-| Output | draft only; sanitised in a `--network none` container; posted by the host | PRs gated by `review-gate` (human approval); summary sanitised; host ref audit after each run |
-| Process | non-root, `cap-drop ALL`, `no-new-privileges`, pid/memory limits, no Docker socket | idem |
+| Who can trigger it | trust gate (maintainer issues, or `triage` label) | `agent-fix` label (maintainers) or CI failures |
+| Credentials next to the model | **none** (the read-only token is used by a separate, model-less fetch container) | write PAT for that repository only, no workflows/admin/environments/deployments |
+| Filesystem | read-only root; repo and snapshot mounted read-only; writes only `/tmp` and its output dir | writable clone; no host mounts except the run dir |
+| Network | `--internal` Docker network + tinyproxy allow-list: **the model endpoint only**; no DNS | same; allow-list = model, GitHub, and the policy's `egress` hosts |
+| LAN / VPN / other services | unreachable | unreachable |
+| Output | draft; sanitised in a `--network none` container; posted by the host (or kept) | draft PR gated by `review-gate`; summary sanitised; host ref + protected-paths audits |
+| Process | non-root, `cap-drop ALL`, `no-new-privileges`, pid/memory limits, no Docker socket | same |
 
-What the sanitiser does (`sanitize.py`): removes HTML comments (no forged
-control markers), images and raw HTML (no zero-click exfiltration through
-image URLs), turns links outside this repository into inert text,
-neutralises `@mentions` and `owner/repo#n` references, strips invisible
-Unicode, redacts credential-shaped strings, and **holds** the answer
-(`triage-held`) when it is long or contains credentials or long
-base64/hex/percent-encoded blobs.
+**The sanitiser** ([runner/sanitize.py](runner/sanitize.py)) removes HTML
+comments (no forged control markers), images and raw HTML (no zero-click
+exfiltration through image URLs), turns links outside the repository and the
+policy's `links` into inert text, neutralises `@mentions` and
+`owner/repo#n` references, strips invisible Unicode, redacts
+credential-shaped strings, and **holds** the answer (`triage-held`) when it is
+too long or contains credentials or long base64/hex/percent-encoded blobs.
 
-What is gated for review: every PR except a pure Renovate bump, enforced
-twice: by the `review-gate` required check (GitHub side, the agent's token
-cannot approve environments or edit workflows) and by the dispatcher's review
-sweep (turns auto-merge off and labels `agent-review`). After each fix run the
-dispatcher compares all branches and tags with a snapshot taken before the
-run; changes outside the run's own branch get auto-merge disabled,
-`agent-review`, and `needs-human` on the issue.
+**The policy file** is only as trusted as the repository's default branch.
+It can tailor behaviour, but it cannot choose the runner image, drop the
+`.github/**` protection, give triage any network access, or raise the host's
+step and attempt limits. It is parsed by a strict YAML-subset parser
+([runner/policy.py](runner/policy.py)) in a network-less container, and an
+invalid policy makes the dispatcher skip the repository.
 
-Tokens, both fine-grained and scoped to this repository only:
-- `GH_TOKEN` (fix mode and the host): *Contents*, *Issues*, *Pull requests*
-  read/write, *Actions* read. **Not** *Workflows*, *Administration*,
-  *Environments*, *Deployments* or *Secrets*: GitHub then rejects pushes to
-  `.github/workflows/`, and the token cannot approve the `review-gate`
-  environment or change branch protection.
-- `GH_TOKEN_READONLY` (triage fetch): *Contents*, *Issues*, *Pull requests*,
-  *Actions* read only. Triage is disabled without it; it never falls back to
-  the write token, and the model never sees it.
+**What is gated for review:** every PR except a pure dependency-bot bump,
+enforced twice: by the `review-gate` required check (GitHub side; the agent's
+token cannot approve environments or edit workflows) and by the dispatcher's
+review sweep (auto-merge off, `agent-review`). After each fix run the
+dispatcher compares every branch and tag with a snapshot taken before the run
+and lists the files changed on the agent's branch: unexpected ref changes or
+protected-path edits get auto-merge disabled, `agent-review`, and
+`needs-human` on the issue.
 
-Known residual risks:
+**Known residual risks**
 - **Fix mode still gives the model a write token.** Injected text (e.g. in a
-  CI log or an issue a maintainer labelled `agent-fix`) could push to other
-  branches, comment, or open PRs. The review gate stops any of it from being
-  merged or published, and the ref audit flags it, but only moving pushes to
-  the host removes it (planned next step: the agent proposes a patch, the
-  host validates and pushes it).
-- The fix allow-list includes GitHub, so a determined injection could post
-  data *to this repository* (e.g. a comment). There is nothing secret for it
-  to read except the token itself, whose reach is this public repository.
-- Branch protection must apply to administrators (`enforce_admins`): the
-  PAT is yours, so without it the token could push to `main` directly.
+  CI log, or an issue a maintainer labelled `agent-fix`) could push to other
+  branches, comment, or open PRs in that repository. The review gate stops
+  any of it from being merged, and the audits flag it; moving pushes to the
+  host (the agent proposes a patch, the host validates and pushes it) is the
+  planned next step.
+- The fix allow-list includes GitHub, so an injection could post data to the
+  repository itself. There is nothing secret in the container except the
+  token, whose reach is that one repository.
+- The review gate's "pure bot PR" test relies on commit author emails unless
+  you set `bot_pr_author` (a GitHub App identity cannot be forged).
+- Branch protection must apply to administrators if the PAT belongs to an
+  admin: without it the token could push to the default branch directly.
 
-## One-time setup
+## Host setup
 
-1. **Build and push the runner image** (from a machine with Docker, e.g. nasbrico):
-   ```bash
-   docker buildx build --platform linux/amd64 -t louisremi/deepseek-harness-dev-agent:latest --push agent-runner/
-   ```
-2. **Create the two tokens** at <https://github.com/settings/personal-access-tokens/new>:
-   repository access *only* `louisremi/deepseek-harness-docker-dev`;
-   permissions as listed under *Security model*. Also do the repository
-   setup in the main [README](../README.md) (`review-gate` required check,
-   `enforce_admins`, the `agent-review` environment).
-3. **Install the dispatcher** with the Unraid *User Scripts* plugin:
-   ```bash
-   d=/boot/config/plugins/user.scripts/scripts/dsh-dev-agent
-   mkdir -p "$d" /mnt/user/appdata/dsh-dev-agent/runs
-   curl -fsSL https://raw.githubusercontent.com/louisremi/deepseek-harness-docker-dev/main/agent-runner/dispatch.sh -o "$d/script"
-   chmod +x "$d/script"
-   cat > "$d/env" <<'EOF'
-   GH_TOKEN=github_pat_WRITE_TOKEN
-   GH_TOKEN_READONLY=github_pat_READONLY_TOKEN
-   REPO=louisremi/deepseek-harness-docker-dev
-   RUNNER_IMAGE=louisremi/deepseek-harness-dev-agent:latest
-   RUNS_DIR=/mnt/user/appdata/dsh-dev-agent/runs
-   LLM_API_BASE=http://100.67.12.33:18982/v1
-   LLM_MODEL=openai/Qwen3.8
-   MAX_ATTEMPTS=2
-   TRIAGE_ENABLED=true
-   TRIAGE_MAX_AGE_DAYS=14
-   EOF
-   chmod 600 "$d/env"
-   echo "dsh-dev-agent" > "$d/name"
-   ```
-   In the User Scripts UI, set the schedule to *Custom* `*/15 * * * *`.
-   Without the plugin, add a root crontab line:
-   `*/15 * * * * DISPATCH_ENV=/boot/config/plugins/user.scripts/scripts/dsh-dev-agent/env /boot/config/plugins/user.scripts/scripts/dsh-dev-agent/script >> /var/log/dsh-dev-agent.log 2>&1`
-4. **Check the sandbox** on nasbrico (the proxy must reach the model; the
-   agent network must reach nothing else):
-   ```bash
-   img=louisremi/deepseek-harness-dev-agent:latest
-   docker network create --internal dsh-agent-test
-   docker run -d --rm --name dsh-egress-test --env EGRESS_ALLOW=100.67.12.33 "$img" egress
-   docker network connect --alias egress dsh-agent-test dsh-egress-test
-   t() { docker run --rm --network dsh-agent-test --dns 127.0.0.1 --entrypoint curl "$img" -sS -o /dev/null -w '%{http_code}\n' --max-time 10 "$@"; }
-   t -x http://egress:8888 http://100.67.12.33:18982/v1/models   # expect 200
-   t -x http://egress:8888 https://example.com                    # expect 000 (CONNECT refused)
-   t http://100.67.12.33:18982/v1/models                          # expect 000 (no route without the proxy)
-   t http://192.168.1.1/                                          # expect 000 (no LAN)
-   docker rm -f dsh-egress-test; docker network rm dsh-agent-test
-   ```
-5. **Dry run:** `DISPATCH_ENV=... dispatch.sh --dry-run` shows what the next
-   tick would do, including which PRs the review sweep would gate.
-6. The host needs `docker`, `curl`, `jq`, `flock`, `timeout`, `comm` and
-   `seq` (all present on Unraid). `python3` is no longer needed on the host:
-   the sanitiser runs in the runner image.
+Requirements: Linux with Docker, `bash`, `curl`, `jq` (1.6+), `flock`,
+`timeout`, `comm`, `seq` (all present on Unraid), and an OpenAI-compatible
+model endpoint with tool calling reachable from containers.
+
+```bash
+d=/boot/config/plugins/user.scripts/scripts/maintainer-agent   # Unraid User Scripts; any dir works
+mkdir -p "$d" /mnt/user/appdata/maintainer-agent/runs
+curl -fsSL https://raw.githubusercontent.com/louisremi/maintainer-agent/v0.1.0/dispatcher/dispatch.sh -o "$d/script"
+curl -fsSL https://raw.githubusercontent.com/louisremi/maintainer-agent/v0.1.0/dispatcher/repos.example.json -o "$d/repos.json"
+chmod +x "$d/script"; $EDITOR "$d/repos.json"
+cat > "$d/env" <<'EOF'
+GH_TOKEN_MYREPO=github_pat_...
+GH_TOKEN_MYREPO_RO=github_pat_...
+RUNS_DIR=/mnt/user/appdata/maintainer-agent/runs
+EOF
+chmod 600 "$d/env"
+DISPATCH_ENV="$d/env" "$d/script" --dry-run
+```
+
+Schedule it every 15 minutes: in User Scripts, *Custom* `*/15 * * * *`; or a
+crontab line running `DISPATCH_ENV=... script` with its output appended to a
+log file.
+
+**Check the sandbox** once. The proxy must reach the model; the agent network
+must reach nothing else. `EGRESS_ALLOW` takes host names or IPs, without port.
+
+```bash
+img=louisremi/maintainer-agent:v0.1.0; model_host=10.0.0.5; model=http://10.0.0.5:8000
+docker network create --internal ma-test
+docker run -d --rm --name ma-egress-test --env EGRESS_ALLOW="$model_host" "$img" egress
+docker network connect --alias egress ma-test ma-egress-test
+t() { docker run --rm --network ma-test --dns 127.0.0.1 --entrypoint curl "$img" -sS -o /dev/null -w '%{http_code}\n' --max-time 10 "$@"; }
+t -x http://egress:8888 "$model/v1/models"   # expect 200
+t -x http://egress:8888 https://example.com  # expect 000 (CONNECT refused)
+t "$model/v1/models"                          # expect 000 (no route without the proxy)
+docker rm -f ma-egress-test; docker network rm ma-test
+```
 
 ## Operating it
 
-- Run one job by hand: `dispatch.sh --fix 12` or `dispatch.sh --triage 12`.
-  A `--triage` run on an outside contributor's issue is an explicit maintainer
-  decision, but the trust gate still applies (add the `triage` label).
-- Per-run directories: `/mnt/user/appdata/dsh-dev-agent/runs/{fix,triage}-<n>-<ts>/`
-  hold the logs, the trajectory, for triage `ctx/` (what the agent saw),
-  `out/…answer.md` (draft) and `answer.safe.md` (what was or would be
-  posted), and for fix `refs.before`/`refs.after`. Browse trajectories with
-  `pipx run --spec mini-swe-agent mini-extra inspect <file>`.
-- Labels you use as a maintainer: `triage`, `retriage`, `no-triage`,
-  `agent-fix`, removing `needs-human` or `triage-held`. `agent-review` on a
-  PR means: read the diff, then approve the `agent-review` deployment and merge.
-- If a fix run needs another host (a new release-binary source), add it to
-  `EGRESS_FIX_ALLOW` in the env file; the proxy log shows refused hosts
-  (`docker logs` is gone after the run, so rerun by hand with `--fix N`).
-- If the model endpoint is down (GPU busy with another model), the dispatcher
-  exits quietly and retries on the next tick.
-- If Qwen's tool calls misbehave, switch to text-based parsing by adding
-  `-c model.model_class=litellm_textbased` in `run-issue.sh`. The v2 default
-  prompt then expects ```` ```mswea_bash_command ```` blocks.
+- One job by hand: `dispatch.sh --repo owner/name --fix 12` or `--triage 12`.
+  `--dry-run` shows what the next tick would do, including which PRs the
+  review sweep would gate.
+- Run folders `RUNS_DIR/<owner>_<name>/{fix,triage}-<n>-<ts>/` hold the logs,
+  the trajectory, the proxy log `egress.log` (allowed and refused hosts); for
+  triage also `ctx/` (what the agent saw, including the resolved
+  `policy.json`), the draft `out/triage-<n>.answer.md` and
+  `answer.safe.md`; for fix also `policy.json` and `refs.before`/`refs.after`.
+  Browse trajectories with `pipx run --spec mini-swe-agent mini-extra inspect <file>`.
+- If the model endpoint is down, the dispatcher exits quietly and retries on
+  the next tick.
+- Repositories needing more toolchains: build `FROM louisremi/maintainer-agent`
+  and set `runner_image` for that repository in `repos.json`.
+- If the model's tool calls misbehave, switch to text-based parsing with
+  `model_class: litellm_textbased` in the configs under `runner/config/`.
+
+## Development
+
+```bash
+tests/run.sh    # shellcheck, hadolint, actionlint, unit tests, dispatcher simulation
+docker build -t maintainer-agent:dev runner/ && tests/smoke-image.sh maintainer-agent:dev
+```
+
+See [AGENTS.md](AGENTS.md).

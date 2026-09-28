@@ -1,0 +1,175 @@
+name: ci-failure-issue
+
+# Reusable workflow: turns a red CI run on selected branches into an
+# `agent-fix` issue that maintainer-agent picks up, and closes that issue
+# again once CI on the same branch is green. Call it from a workflow_run
+# workflow in the watched repository:
+#
+#   on:
+#     workflow_run: {workflows: [CI], types: [completed]}
+#   jobs:
+#     ci-failure:
+#       if: github.event.workflow_run.head_repository.full_name == github.repository
+#       uses: louisremi/maintainer-agent/.github/workflows/ci-failure-issue.yml@<sha> # vX.Y.Z
+#       with:
+#         branches: "main renovate/* maintainer-agent/main-fix-*"
+#       permissions: {contents: read, issues: write, pull-requests: write, actions: read}
+#
+# The hidden marker `<!-- maintainer-agent:ci pr=… branch=… run=… sha=… -->`
+# in the issue body is parsed by the agent (runner/run-fix.sh) and the
+# dispatcher: keep its format stable. The agent only pushes to a marker branch
+# that is listed in the repository policy's `bot_branches` (or its own
+# maintainer-agent/* branches); a red default branch gets a new
+# maintainer-agent/main-fix-<n> branch and a draft PR instead.
+#
+# A branch that went red is never auto-merged again: whatever fixes it may be
+# agent-written, so the `review-gate` check holds it for a maintainer.
+
+on:
+  workflow_call:
+    inputs:
+      branches:
+        description: Space-separated branch globs whose CI failures become agent-fix issues.
+        type: string
+        required: true
+      log_lines:
+        description: Lines of failed-job log to include in the issue.
+        type: number
+        default: 250
+
+permissions: {}
+
+concurrency:
+  group: ci-failure-issue-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  issue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+      CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      EVENT: ${{ github.event.workflow_run.event }}
+      BRANCHES: ${{ inputs.branches }}
+      LOG_LINES: ${{ inputs.log_lines }}
+    steps:
+      - name: Filter
+        id: filter
+        run: |
+          set -euo pipefail
+          match=false
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_run && "${HEAD_REPO}" == "${GH_REPO}" \
+                && ( "${CONCLUSION}" == failure || "${CONCLUSION}" == success ) ]]; then
+            set -f
+            for g in ${BRANCHES}; do
+              # shellcheck disable=SC2053
+              [[ "${BRANCH}" == ${g} ]] && match=true
+            done
+            set +f
+          fi
+          echo "match=${match}" >> "$GITHUB_OUTPUT"
+          echo "branch ${BRANCH}, conclusion ${CONCLUSION}: match=${match}"
+
+      - name: Locate PR and existing issue
+        id: ctx
+        if: steps.filter.outputs.match == 'true'
+        run: |
+          set -euo pipefail
+          default_branch="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)"
+          pr=""; pr_title=""
+          if [[ "${BRANCH}" != "${default_branch}" ]]; then
+            read -r pr pr_title < <(gh pr list --head "${BRANCH}" --state open --json number,title \
+              --jq '.[0] | "\(.number // "") \(.title // "")"') || true
+          fi
+          issue="$(gh issue list --state open --label agent-fix --limit 100 --json number,body \
+            --jq "map(select(.body | contains(\"<!-- maintainer-agent:ci \") and contains(\"branch=${BRANCH} \"))) | first | .number // empty")"
+          {
+            echo "pr=${pr}"
+            echo "pr_title=${pr_title}"
+            echo "issue=${issue}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh the agent-fix issue
+        if: steps.filter.outputs.match == 'true' && env.CONCLUSION == 'failure'
+        env:
+          PR: ${{ steps.ctx.outputs.pr }}
+          PR_TITLE: ${{ steps.ctx.outputs.pr_title }}
+          ISSUE: ${{ steps.ctx.outputs.issue }}
+        run: |
+          set -euo pipefail
+          gh label create agent-fix --color D93F0B --description "maintainer-agent: fix CI / implement this issue as a PR" 2>/dev/null || true
+          failed_jobs="$(gh run view "${RUN_ID}" --json jobs \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")')"
+          log_tail="$(gh run view "${RUN_ID}" --log-failed 2>/dev/null | tail -n "${LOG_LINES}" | sed 's/\x1b\[[0-9;]*m//g' || true)"
+          # Never leak anything that looks like a credential into an issue,
+          # and never let log text close the code block or forge a marker.
+          # shellcheck disable=SC2016  # literal backticks in the sed script
+          log_tail="$(sed -E 's/(dckr_pat_|ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|sk-)[A-Za-z0-9_-]+/\1<redacted>/g; s/```/`` `/g; s/<!--/<! --/g' <<<"${log_tail}")"
+
+          if [[ -n "${PR}" ]]; then
+            title="CI failure: ${PR_TITLE}"
+            subject="pull request #${PR} (\`${BRANCH}\`)"
+          else
+            title="CI failure on ${BRANCH} (${EVENT})"
+            subject="\`${BRANCH}\` at ${HEAD_SHA:0:12}"
+          fi
+
+          body_file="$(mktemp)"
+          {
+            echo "<!-- maintainer-agent:ci pr=${PR:-none} branch=${BRANCH} run=${RUN_ID} sha=${HEAD_SHA} -->"
+            echo "CI failed for ${subject}."
+            echo
+            echo "- Run: ${RUN_URL}"
+            echo "- Failed jobs: ${failed_jobs:-unknown}"
+            [[ -n "${PR}" ]] && echo "- Pull request: #${PR} (auto-merge disabled; it now needs a maintainer's review)"
+            echo
+            echo "Picked up automatically by [maintainer-agent](https://github.com/louisremi/maintainer-agent). This issue closes itself when CI on \`${BRANCH}\` is green. The fix is never merged without a maintainer's review."
+            echo
+            echo "<details><summary>Failed job log (tail)</summary>"
+            echo
+            echo '```text'
+            printf '%s\n' "${log_tail}"
+            echo '```'
+            echo
+            echo "</details>"
+          } > "${body_file}"
+
+          if [[ -z "${ISSUE}" ]]; then
+            gh issue create --title "${title}" --label agent-fix --body-file "${body_file}"
+          else
+            gh issue edit "${ISSUE}" --title "${title}" --body-file "${body_file}"
+            gh issue comment "${ISSUE}" --body "CI failed again on ${HEAD_SHA:0:12}: ${RUN_URL}"
+          fi
+
+          if [[ -n "${PR}" ]]; then
+            gh pr merge "${PR}" --disable-auto 2>/dev/null || true
+          fi
+
+      - name: Close the resolved issue
+        if: steps.filter.outputs.match == 'true' && env.CONCLUSION == 'success' && steps.ctx.outputs.issue != ''
+        env:
+          PR: ${{ steps.ctx.outputs.pr }}
+          ISSUE: ${{ steps.ctx.outputs.issue }}
+        run: |
+          set -euo pipefail
+          gh issue close "${ISSUE}" --reason completed \
+            --comment "CI is green on \`${BRANCH}\` at ${HEAD_SHA:0:12} (${RUN_URL}). Closing."
+          gh issue edit "${ISSUE}" --remove-label agent-in-progress 2>/dev/null || true
+          if [[ -n "${PR}" ]]; then
+            # The branch went red and was handed to the agent, so any fix on
+            # it may be agent-written: never re-enable auto-merge.
+            gh pr edit "${PR}" --add-label agent-review 2>/dev/null || true
+            gh pr comment "${PR}" --body "CI is green again. This branch was handed to maintainer-agent after a failure, so it needs a maintainer's review: check the diff, then approve the \`agent-review\` environment on the \`review-gate\` check and merge." || true
+          fi
