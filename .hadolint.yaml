@@ -1,0 +1,4 @@
+ignored:
+  # USER node / USER agent: named users are created by the base image or in
+  # the Dockerfile itself, so they always resolve.
+  - DL3066

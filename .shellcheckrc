@@ -1,0 +1,4 @@
+# Remote scripts are passed single-quoted to `docker run ... bash -c` on purpose.
+disable=SC2016
+# Trap handlers are invoked indirectly.
+disable=SC2329

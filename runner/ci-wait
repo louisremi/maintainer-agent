@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Wait for the CI checks of the pull request whose head is <branch> and report
+# the outcome. On failure, print the tail of the failed job logs so the caller
+# (usually the repair agent) can act on it.
+#
+#   scripts/ci-wait.sh <branch> [timeout-seconds]      default timeout: 5400
+#
+# Exit codes: 0 all checks green, 1 at least one check failed, 2 no PR / timed
+# out / other error. Needs `gh` authenticated for this repository.
+set -euo pipefail
+
+branch="${1:?usage: ci-wait.sh <branch> [timeout-seconds]}"
+timeout_s="${2:-5400}"
+
+pr="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number // empty')"
+if [[ -z "${pr}" ]]; then
+  echo "no open pull request for branch ${branch}" >&2
+  exit 2
+fi
+head_sha="$(gh pr view "${pr}" --json headRefOid --jq .headRefOid)"
+echo "waiting for CI on PR #${pr} (${branch} @ ${head_sha:0:12}), timeout ${timeout_s}s"
+
+# Checks can take a few seconds to register after a push.
+deadline=$(( $(date +%s) + timeout_s ))
+until [[ "$(gh pr checks "${pr}" --json name --jq 'length' 2>/dev/null || echo 0)" -gt 0 ]]; do
+  (( $(date +%s) < deadline )) || { echo "no checks appeared before timeout" >&2; exit 2; }
+  sleep 15
+done
+
+remaining=$(( deadline - $(date +%s) ))
+if timeout "${remaining}" gh pr checks "${pr}" --watch --fail-fast --interval 30 >/dev/null 2>&1; then
+  gh pr checks "${pr}" || true
+  echo "CI green for PR #${pr}"
+  exit 0
+fi
+rc=$?
+gh pr checks "${pr}" || true
+if (( rc == 124 )); then
+  echo "timed out waiting for CI on PR #${pr}" >&2
+  exit 2
+fi
+
+echo
+echo "=== failed job logs (tail) ==="
+run_id="$(gh run list --branch "${branch}" --workflow ci.yml --commit "${head_sha}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+if [[ -n "${run_id}" ]]; then
+  gh run view "${run_id}" --log-failed 2>/dev/null | tail -n 300 || true
+else
+  echo "(could not locate the CI run for ${head_sha})"
+fi
+exit 1
