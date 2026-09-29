@@ -58,7 +58,7 @@ server is enough.
      ([caller template](templates/caller-ci-failure.yml)).
 
 Pin the reusable workflows to a release commit SHA
-(`uses: louisremi/maintainer-agent/.github/workflows/review-gate.yml@<sha> # v0.1.0`).
+(`uses: louisremi/maintainer-agent/.github/workflows/review-gate.yml@<sha> # v0.1.1`).
 
 ## Behaviour per repository
 
@@ -149,8 +149,8 @@ model endpoint with tool calling reachable from containers.
 ```bash
 d=/boot/config/plugins/user.scripts/scripts/maintainer-agent   # Unraid User Scripts; any dir works
 mkdir -p "$d" /mnt/user/appdata/maintainer-agent/runs
-curl -fsSL https://raw.githubusercontent.com/louisremi/maintainer-agent/v0.1.0/dispatcher/dispatch.sh -o "$d/script"
-curl -fsSL https://raw.githubusercontent.com/louisremi/maintainer-agent/v0.1.0/dispatcher/repos.example.json -o "$d/repos.json"
+curl -fsSL https://raw.githubusercontent.com/louisremi/maintainer-agent/v0.1.1/dispatcher/dispatch.sh -o "$d/script"
+curl -fsSL https://raw.githubusercontent.com/louisremi/maintainer-agent/v0.1.1/dispatcher/repos.example.json -o "$d/repos.json"
 chmod +x "$d/script"; $EDITOR "$d/repos.json"
 cat > "$d/env" <<'EOF'
 GH_TOKEN_MYREPO=github_pat_...
@@ -169,7 +169,7 @@ log file.
 must reach nothing else. `EGRESS_ALLOW` takes host names or IPs, without port.
 
 ```bash
-img=louisremi/maintainer-agent:v0.1.0; model_host=10.0.0.5; model=http://10.0.0.5:8000
+img=louisremi/maintainer-agent:v0.1.1; model_host=10.0.0.5; model=http://10.0.0.5:8000
 docker network create --internal ma-test
 docker run -d --rm --name ma-egress-test --env EGRESS_ALLOW="$model_host" "$img" egress
 docker network connect --alias egress ma-test ma-egress-test

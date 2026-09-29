@@ -511,7 +511,7 @@ while IFS=$'\t' read -r _ r issue kind assoc; do
   rc=$?
   set -e
   draft="${run_dir}/out/triage-${issue}.answer.md"
-  (( rc == 0 )) && [[ -s "${draft}" ]] || fail "no answer produced (rc=${rc})"
+  if (( rc != 0 )) || [[ ! -s "${draft}" ]]; then fail "no answer produced (rc=${rc})"; fi
 
   # c. sanitise (no network); exit 3 = suspicious, hold for a human.
   safe="${run_dir}/answer.safe.md"
@@ -522,7 +522,7 @@ while IFS=$'\t' read -r _ r issue kind assoc; do
     log "${REPO}: triage answer for #${issue} HELD for review ($(tr '\n' ';' < "${safe}.reasons")); draft in ${run_dir}"
     exit 0
   fi
-  (( src == 0 )) && [[ -s "${safe}" ]] || fail "sanitiser failed (rc=${src})"
+  if (( src != 0 )) || [[ ! -s "${safe}" ]]; then fail "sanitiser failed (rc=${src})"; fi
 
   # d. post with the host token, or keep as a draft.
   if [[ "${POST}" != true ]] || ! can_write; then

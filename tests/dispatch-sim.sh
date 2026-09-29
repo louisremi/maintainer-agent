@@ -55,7 +55,7 @@ case "$url" in
   */issues\?state=open*) cat "$STATE/issues-${repo//\//_}.json" 2>/dev/null || echo '[]' ;;
   */issues/*/comments\?*) echo '[]' ;;
   */issues/9) echo '{"body":"do it"}' ;;
-  https://api.github.com/repos/*/*) [[ "$method" == GET && "$url" =~ /repos/[^/]+/[^/]+$ ]] && echo '{"default_branch":"main"}' || echo '{}' ;;
+  https://api.github.com/repos/*/*) if [[ "$method" == GET && "$url" =~ /repos/[^/]+/[^/]+$ ]]; then echo '{"default_branch":"main"}'; else echo '{}'; fi ;;
   https://api.github.com/graphql) echo '{}' ;;
   *) echo '{}' ;;
 esac

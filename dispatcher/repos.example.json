@@ -1,7 +1,7 @@
 {
   "_comment": "Host config for dispatch.sh. No secrets here: token_env / readonly_token_env name variables defined in the env file (DISPATCH_ENV).",
   "defaults": {
-    "runner_image": "louisremi/maintainer-agent:v0.1.0",
+    "runner_image": "louisremi/maintainer-agent:v0.1.1",
     "llm_api_base": "http://127.0.0.1:8000/v1",
     "llm_model": "openai/your-model",
     "git_author": "maintainer-agent <maintainer-agent@users.noreply.github.com>",
