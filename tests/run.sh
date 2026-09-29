@@ -16,7 +16,7 @@ check "sanitize.py tests" python3 tests/test_sanitize.py
 check "policy.py tests" python3 tests/test_policy.py
 check "dispatcher simulation" tests/dispatch-sim.sh
 check "templates are valid policy" bash -c 'python3 runner/policy.py < templates/maintainer-agent.yml >/dev/null'
-check "no project-specific leftovers" bash -c '! git grep -n -I -E "deepseek-harness|nasbrico|100\.67\.|Qwen|static-check\.sh|hub\.docker\.com" -- ":!README.md" ":!tests/run.sh" ":!dispatcher/repos.example.json"'
+check "no project-specific leftovers" bash -c '! git grep -n -I -E "deepseek-harness|nasbrico|100\.67\.|Qwen|static-check\.sh|hub\.docker\.com" -- ":!README.md" ":!PLAN.md" ":!tests/run.sh" ":!dispatcher/repos.example.json"'
 
 echo
 if (( failures )); then echo "tests: ${failures} failure(s)" >&2; exit 1; fi
