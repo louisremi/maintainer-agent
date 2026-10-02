@@ -1,0 +1,52 @@
+{
+  "name": "maintainer-agent-server",
+  "version": "0.2.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "arch": "depcruise src --config .dependency-cruiser.cjs",
+    "start": "node dist/bootstrap/main.js",
+    "check": "pnpm typecheck && pnpm arch && pnpm test"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.1.2",
+    "@nestjs/core": "^12.1.2",
+    "@nestjs/platform-express": "^12.1.2",
+    "better-sqlite3": "^13.0.3",
+    "dockerode": "^5.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "@swc/core",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^12.1.2",
+    "@swc/core": "^1.16.13",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/dockerode": "^4.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.1",
+    "@types/supertest": "^7.2.1",
+    "dependency-cruiser": "^18.5.0",
+    "nock": "^14.0.17",
+    "supertest": "^7.3.1",
+    "typescript": "^5.9.3",
+    "unplugin-swc": "^2.0.0",
+    "vitest": "^5.0.3"
+  }
+}

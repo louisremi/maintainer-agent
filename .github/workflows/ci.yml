@@ -1,8 +1,9 @@
 name: CI
 
-# PRs: lint + tests + amd64 runner-image build and smoke test.
+# PRs: lint + tests + amd64 image builds and smoke tests.
 # main and v* tags: build amd64 + arm64 on native runners and publish
-# docker.io/louisremi/maintainer-agent:{latest | vX.Y.Z}, sha-<short>.
+#   docker.io/louisremi/maintainer-agent:{latest | vX.Y.Z}, sha-<short>         (runner)
+#   docker.io/louisremi/maintainer-agent-server:{latest | vX.Y.Z}, sha-<short>  (server)
 
 on:
   pull_request:
@@ -18,9 +19,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  IMAGE: docker.io/louisremi/maintainer-agent
-
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -30,6 +28,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install server dependencies
+        working-directory: server
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
       - name: Install linters
         env:
           HADOLINT_VERSION: 2.15.1
@@ -53,15 +59,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        component: [runner, server]
+        arch: [amd64, arm64]
         include:
           - arch: amd64
             runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
+          - component: runner
+            image: maintainer-agent
+          - component: server
+            image: maintainer-agent-server
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
       PUBLISH: ${{ github.event_name == 'push' }}
+      IMAGE: docker.io/louisremi/${{ matrix.image }}
     steps:
       - name: Skip arm64 on pull requests
         if: matrix.arch == 'arm64' && github.event_name == 'pull_request'
@@ -74,16 +87,21 @@ jobs:
         if: matrix.arch == 'amd64' || github.event_name != 'pull_request'
         uses: docker/build-push-action@v7
         with:
-          context: runner
+          context: ${{ matrix.component }}
           platforms: linux/${{ matrix.arch }}
           load: true
-          tags: maintainer-agent:ci
+          tags: ${{ matrix.image }}:ci
           build-args: AGENT_VERSION=${{ github.ref_name }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }},mode=max
       - name: Smoke test
         if: matrix.arch == 'amd64' || github.event_name != 'pull_request'
-        run: tests/smoke-image.sh maintainer-agent:ci
+        run: |
+          if [[ "${{ matrix.component }}" == runner ]]; then
+            tests/smoke-image.sh "${{ matrix.image }}:ci"
+          else
+            tests/smoke-server.sh "${{ matrix.image }}:ci"
+          fi
       - uses: docker/login-action@v4
         if: env.PUBLISH == 'true'
         with:
@@ -94,32 +112,41 @@ jobs:
         if: env.PUBLISH == 'true'
         uses: docker/build-push-action@v7
         with:
-          context: runner
+          context: ${{ matrix.component }}
           platforms: linux/${{ matrix.arch }}
           build-args: AGENT_VERSION=${{ github.ref_name }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - name: Record digest
         if: env.PUBLISH == 'true'
         run: |
           mkdir -p out
-          echo "${{ steps.push.outputs.digest }}" > "out/digest-${{ matrix.arch }}"
+          echo "${{ steps.push.outputs.digest }}" > "out/digest-${{ matrix.component }}-${{ matrix.arch }}"
       - uses: actions/upload-artifact@v7
         if: env.PUBLISH == 'true'
         with:
-          name: digest-${{ matrix.arch }}
+          name: digest-${{ matrix.component }}-${{ matrix.arch }}
           path: out/
           retention-days: 7
 
   publish:
     needs: image
     if: github.event_name == 'push'
+    strategy:
+      matrix:
+        include:
+          - component: runner
+            image: maintainer-agent
+          - component: server
+            image: maintainer-agent-server
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      IMAGE: docker.io/louisremi/${{ matrix.image }}
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: digest-*
+          pattern: digest-${{ matrix.component }}-*
           path: artifacts
           merge-multiple: true
       - uses: docker/setup-buildx-action@v4
@@ -132,10 +159,11 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
+          COMPONENT: ${{ matrix.component }}
         run: |
           set -euo pipefail
           tags=(--tag "${IMAGE}:sha-${SHA:0:12}")
           if [[ "${REF_TYPE}" == tag ]]; then tags+=(--tag "${IMAGE}:${REF_NAME}"); else tags+=(--tag "${IMAGE}:latest"); fi
           docker buildx imagetools create "${tags[@]}" \
-            "${IMAGE}@$(cat artifacts/digest-amd64)" "${IMAGE}@$(cat artifacts/digest-arm64)"
+            "${IMAGE}@$(cat "artifacts/digest-${COMPONENT}-amd64")" "${IMAGE}@$(cat "artifacts/digest-${COMPONENT}-arm64")"
           docker buildx imagetools inspect "${IMAGE}:sha-${SHA:0:12}"

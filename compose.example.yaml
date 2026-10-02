@@ -1,0 +1,35 @@
+# maintainer-agent: one server, any number of GitHub Apps and repositories.
+#
+#   cp compose.example.yaml compose.yaml   # then edit the environment
+#   docker compose up -d
+#   docker compose logs server | grep "admin password"
+#   open ${PUBLIC_URL}/admin  →  "Add a GitHub App"  →  install it on repositories
+#
+# GitHub must reach PUBLIC_URL over HTTPS (reverse proxy, Cloudflare Tunnel,
+# Tailscale Funnel...). The model endpoint must be reachable from containers
+# on the default Docker bridge (the agents reach it through an egress proxy).
+#
+# The server starts agent containers through the Docker socket. Access to the
+# socket is equivalent to root on the host: run this on a dedicated host or
+# VM, or use rootless Docker.
+services:
+  server:
+    image: louisremi/maintainer-agent-server:v0.2.0
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PUBLIC_URL: https://agent.example.org
+      LLM_API_BASE: http://192.0.2.10:8000/v1       # any OpenAI-compatible endpoint
+      LLM_MODEL: openai/your-model                   # litellm model name
+      # LLM_API_KEY: ...
+      RUNNER_IMAGE: louisremi/maintainer-agent:v0.2.0
+      DATA_DIR: /srv/maintainer-agent
+      SECRETS_KEY: change-me-to-a-long-random-string  # encrypts app credentials at rest
+      # ALLOWED_ACCOUNTS: my-user my-org             # needed for public apps
+      # MAX_CONCURRENT_JOBS: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Must be the same absolute path on the host and in the container:
+      # the server mounts job directories into the agent containers.
+      - /srv/maintainer-agent:/srv/maintainer-agent

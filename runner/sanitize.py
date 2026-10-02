@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Sanitise agent-written Markdown before it is posted to GitHub.
+"""Sanitise agent-written Markdown before it is posted to a forge.
 
     sanitize.py < draft.md > safe.md
+    sanitize.py --json < {"texts": [...]} > {"results": [{"text", "held", "reasons"}]}
 
-Exit status: 0 = safe to post (sanitised text on stdout)
+Exit status: 0 = safe to post (sanitised text on stdout); with --json always
+                 0 on success, and each result says whether it is held
              3 = HOLD: do not post; a human should look (reasons on stderr,
                  sanitised text still on stdout for the run directory)
              2 = usage / internal error
@@ -30,7 +32,12 @@ which have no place in a first answer and are the usual shape of exfiltrated
 data.
 
 Configuration (environment):
-  REPO                          owner/name whose github.com URLs are allowed (required)
+  SANITIZE_REPO_URL             web URL of the repository, e.g.
+                                https://github.com/owner/name or
+                                https://gitlab.example.org/group/sub/name;
+                                links under it stay clickable
+  REPO                          owner/name on github.com (older alternative
+                                to SANITIZE_REPO_URL)
   SANITIZE_EXTRA_LINK_PREFIXES  space-separated extra allowed https URL prefixes
                                 (the repository policy's `links`)
   SANITIZE_MAX_CHARS            hold above this length (default 12000)
@@ -38,11 +45,13 @@ Configuration (environment):
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 
 REPO = os.environ.get("REPO", "")
+REPO_URL = os.environ.get("SANITIZE_REPO_URL", "").rstrip("/") or (f"https://github.com/{REPO}" if REPO else "")
 EXTRA_PREFIXES = [p for p in os.environ.get("SANITIZE_EXTRA_LINK_PREFIXES", "").split()
                   if p.startswith("https://") and len(p) > len("https://x.y")]
 MAX_CHARS = int(os.environ.get("SANITIZE_MAX_CHARS", "12000"))
@@ -87,8 +96,15 @@ XREF = re.compile(r"(?<![\w`/.])([A-Za-z0-9][\w.-]*/[\w.-]+#\d+)\b")
 reasons: list[str] = []
 
 
+TRAVERSAL = re.compile(r"(^|/)\.\.?(/|$|[?#])|%2e|%2f|%5c|\\", re.I)
+
+
 def allowed(url: str) -> bool:
-    base = f"https://github.com/{REPO}"
+    base = REPO_URL
+    # A prefix check is only meaningful on a normalised path: `/o/r/../../x`
+    # starts with the repository URL but resolves elsewhere.
+    if TRAVERSAL.search(url.split("://", 1)[-1]):
+        return False
     if url == base or url.startswith((base + "/", base + "#", base + "?")):
         return True
     if url.startswith("#"):  # in-page anchor
@@ -188,14 +204,39 @@ def sanitize(text: str) -> str:
     return text
 
 
-def main() -> int:
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPO):
-        print("sanitize.py: REPO=owner/name is required", file=sys.stderr)
+REPO_URL_RE = re.compile(r"https://[a-z0-9.-]+(:\d{1,5})?(/[A-Za-z0-9_.-]+){2,}")
+
+
+def sanitize_json(raw: str) -> int:
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"sanitize.py: invalid JSON input: {e}", file=sys.stderr)
         return 2
-    if len(sys.argv) > 1:
+    texts = doc.get("texts") if isinstance(doc, dict) else None
+    if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts) or len(texts) > 500:
+        print('sanitize.py: expected {"texts": [string, ...]}', file=sys.stderr)
+        return 2
+    results = []
+    for t in texts:
+        reasons.clear()
+        clean = sanitize(t)
+        results.append({"text": clean, "held": bool(reasons), "reasons": list(reasons)})
+    json.dump({"results": results}, sys.stdout)
+    return 0
+
+
+def main() -> int:
+    if not REPO_URL_RE.fullmatch(REPO_URL) or ".." in REPO_URL:
+        print("sanitize.py: SANITIZE_REPO_URL (https://host/owner/name) or REPO=owner/name is required", file=sys.stderr)
+        return 2
+    args = sys.argv[1:]
+    if args not in ([], ["--json"]):
         print(__doc__.split("\n\n")[0], file=sys.stderr)
         return 2
-    raw = sys.stdin.buffer.read(1_000_000).decode("utf-8", errors="replace")
+    raw = sys.stdin.buffer.read(4_000_000).decode("utf-8", errors="replace")
+    if args == ["--json"]:
+        return sanitize_json(raw)
     sys.stdout.write(sanitize(raw))
     for r in reasons:
         print(f"HOLD: {r}", file=sys.stderr)

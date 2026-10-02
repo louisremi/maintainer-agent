@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
-"""Validate and normalise a repository's `.github/maintainer-agent.yml`.
+"""Validate and normalise a repository's maintainer-agent policy file.
 
     policy.py < maintainer-agent.yml > policy.json      (empty stdin = defaults)
 
 Exit 0 with normalised JSON on stdout, or exit 1 with the errors on stderr.
 Runs with --network none: the policy comes from the watched repository and is
 only as trustworthy as that repository's default branch. It can tailor the
-agent's behaviour but never weaken the host's guarantees:
+agent's behaviour but never weaken the server's guarantees:
 
 - unknown keys are errors (typos must not silently disable something);
-- paths must be relative, without `..`, and are checked against the snapshot
-  by the caller;
+- paths must be relative, without `..`;
 - egress hosts must be plain host names (optionally with `*` inside one DNS
-  label); they only apply to fix mode;
+  label); they only apply to the fix agent;
 - link prefixes must be https URLs;
-- `.github/**` and the policy file itself are always protected;
+- the policy files themselves are always protected (the server adds the
+  forge's own automation paths, e.g. `.github/**`);
 - numeric limits are clamped to host maxima passed in the environment
-  (MAX_STEP_LIMIT, MAX_ATTEMPTS_CAP).
+  (MAX_STEP_LIMIT, MAX_ATTEMPTS_CAP); the server clamps them again.
+
+Versions: `version: 2` is current. `version: 1` files (maintainer-agent
+v0.1) are still accepted: `triage` maps to `answer`, `playbooks.triage` to
+`playbooks.issue`; `playbooks.ci-fix`, `bot_branches`, `bot_authors` and
+`triage.max_age_days` are accepted and ignored.
 
 A tiny YAML subset parser is included so the runner needs no PyYAML: maps,
 lists (block `- x` and flow `[a, b]`), quoted/unquoted scalars, booleans,
@@ -32,22 +37,24 @@ import sys
 
 MAX_STEP_LIMIT = int(os.environ.get("MAX_STEP_LIMIT", "120"))
 MAX_ATTEMPTS_CAP = int(os.environ.get("MAX_ATTEMPTS_CAP", "5"))
-POLICY_PATH = ".github/maintainer-agent.yml"
+POLICY_FILES = [".maintainer-agent.yml", ".github/maintainer-agent.yml", ".gitlab/maintainer-agent.yml"]
 
 DEFAULTS = {
-    "version": 1,
     "instructions": [],          # empty = first of AGENTS.md, CONTRIBUTING.md, README.md that exists
-    "playbooks": {"triage": "", "implement": "", "ci-fix": ""},  # empty = generic playbook
+    "playbooks": {"issue": "", "implement": "", "review": ""},  # empty = generic playbook
     "checks": [],
     "egress": [],
     "links": [],
     "protected_paths": [],
-    "bot_branches": [],
-    "bot_authors": [],
-    "triage": {"enabled": True, "max_age_days": 14, "max_attempts": 2},
-    "fix": {"enabled": True, "max_attempts": 2, "step_limit": 80},
+    "answer": {"enabled": True, "max_attempts": 2},
+    "fix": {"enabled": True, "trigger": "maintainers", "max_attempts": 2, "step_limit": 80},
+    "review": {"enabled": True, "max_comments": 20,
+               "max_diff_lines": 5000, "max_attempts": 2},
 }
-ALWAYS_PROTECTED = [".github/**", POLICY_PATH]
+TOP_KEYS = {"version", "instructions", "playbooks", "checks", "egress", "links", "protected_paths",
+            "answer", "fix", "review"}
+V1_ONLY_KEYS = {"triage", "bot_branches", "bot_authors"}
+ALWAYS_PROTECTED = POLICY_FILES
 
 
 class PolicyError(Exception):
@@ -194,6 +201,22 @@ BRANCH_GLOB = re.compile(r"^[A-Za-z0-9._/*-]+$")
 EMAIL = re.compile(r"^[^\s@<>]+@[^\s@<>]+$")
 
 
+def _wildcard_ok(host: str) -> bool:
+    """`*` only in the first label, followed by at least two plain labels
+    (`*.example.org`, `foo*.blob.core.windows.net`). `*.com` is refused, and
+    so is `*.co.uk`: when the label before the top-level domain is short
+    (co, com, org, ac...), three plain labels are required."""
+    labels = host.split(".")
+    if any("*" in label for label in labels[1:]):
+        return False
+    if "*" not in labels[0]:
+        return True
+    rest = labels[1:]
+    if len(rest) < 2:
+        return False
+    return len(rest) >= 3 or len(rest[0]) > 3
+
+
 def _str_list(v, key, errors, pattern=None, what="value", limit=50):
     if v is None:
         return []
@@ -233,16 +256,29 @@ def _bool(v, key, default, errors):
     return v
 
 
+def _section(doc, key, fields, errors):
+    sect = doc.get(key)
+    if sect is None:
+        return {}
+    if not isinstance(sect, dict):
+        errors.append(f"{key}: must be a map")
+        return {}
+    for k in set(sect) - set(fields):
+        errors.append(f"{key}: unknown key {k!r}")
+    return sect
+
+
 def normalise(doc) -> dict:
     errors: list[str] = []
     if not isinstance(doc, dict):
         raise PolicyError("the policy must be a YAML map")
-    unknown = set(doc) - set(DEFAULTS)
+    version = doc.get("version", 2)
+    if version not in (1, 2):
+        errors.append("version: only 1 and 2 are supported")
+    allowed = TOP_KEYS | (V1_ONLY_KEYS if version == 1 else set())
+    unknown = set(doc) - allowed
     if unknown:
         errors.append(f"unknown keys: {', '.join(sorted(unknown))}")
-    version = doc.get("version", 1)
-    if version != 1:
-        errors.append("version: only 1 is supported")
 
     p = json.loads(json.dumps(DEFAULTS))
     p["instructions"] = _str_list(doc.get("instructions"), "instructions", errors, REL_PATH, "path", 10)
@@ -251,16 +287,19 @@ def normalise(doc) -> dict:
     if not isinstance(pb, dict):
         errors.append("playbooks: must be a map")
         pb = {}
-    for k in set(pb) - set(p["playbooks"]):
+    names = {"issue": "issue", "implement": "implement", "review": "review"}
+    if version == 1:
+        names = {"triage": "issue", "implement": "implement", "ci-fix": None}
+    for k in set(pb) - set(names):
         errors.append(f"playbooks: unknown key {k!r}")
-    for k in p["playbooks"]:
+    for k, target in names.items():
         v = pb.get(k)
         if v is None:
             continue
         if not isinstance(v, str) or not REL_PATH.fullmatch(v) or "*" in v:
             errors.append(f"playbooks.{k}: must be a relative file path")
-        else:
-            p["playbooks"][k] = v
+        elif target:
+            p["playbooks"][target] = v
 
     checks = _str_list(doc.get("checks"), "checks", errors, limit=10)
     for c in checks:
@@ -268,35 +307,41 @@ def normalise(doc) -> dict:
             errors.append(f"checks: command too long or multi-line: {c[:40]!r}")
     p["checks"] = [c for c in checks if len(c) <= 300]
     p["egress"] = [h.lower() for h in _str_list(doc.get("egress"), "egress", errors, limit=50)
-                   if HOST.fullmatch(h.lower()) or errors.append(f"egress: invalid host {h!r}")]
+                   if (HOST.fullmatch(h.lower()) and _wildcard_ok(h.lower()))
+                   or errors.append(f"egress: invalid host {h!r} (a label with * needs at least two plain labels after it)")]
     p["links"] = [u for u in _str_list(doc.get("links"), "links", errors, limit=20)
                   if re.fullmatch(r"https://[A-Za-z0-9.-]+(/[^\s<>()\[\]`]*)?", u)
                   or errors.append(f"links: must be an https URL prefix: {u!r}")]
     protected = _str_list(doc.get("protected_paths"), "protected_paths", errors, REL_PATH, "path glob", 50)
     p["protected_paths"] = sorted(set(protected) | set(ALWAYS_PROTECTED))
-    p["bot_branches"] = _str_list(doc.get("bot_branches"), "bot_branches", errors, BRANCH_GLOB, "branch glob", 10)
-    for b in p["bot_branches"]:
-        if b in ("*", "**") or b.startswith("maintainer-agent/"):
-            errors.append(f"bot_branches: {b!r} is not allowed")
-    p["bot_authors"] = _str_list(doc.get("bot_authors"), "bot_authors", errors, EMAIL, "email", 10)
 
-    for mode, fields in (("triage", ("enabled", "max_age_days", "max_attempts")),
-                         ("fix", ("enabled", "max_attempts", "step_limit"))):
-        sect = doc.get(mode) or {}
-        if not isinstance(sect, dict):
-            errors.append(f"{mode}: must be a map")
-            continue
-        for k in set(sect) - set(fields):
-            errors.append(f"{mode}: unknown key {k!r}")
-        p[mode]["enabled"] = _bool(sect.get("enabled"), f"{mode}.enabled", p[mode]["enabled"], errors)
-        p[mode]["max_attempts"] = _clamp_int(sect.get("max_attempts"), f"{mode}.max_attempts", 1,
-                                             MAX_ATTEMPTS_CAP, p[mode]["max_attempts"], errors)
-    p["triage"]["max_age_days"] = _clamp_int((doc.get("triage") or {}).get("max_age_days")
-                                             if isinstance(doc.get("triage"), dict) else None,
-                                             "triage.max_age_days", 1, 365, 14, errors)
-    p["fix"]["step_limit"] = _clamp_int((doc.get("fix") or {}).get("step_limit")
-                                        if isinstance(doc.get("fix"), dict) else None,
-                                        "fix.step_limit", 10, MAX_STEP_LIMIT, 80, errors)
+    if version == 1:
+        _str_list(doc.get("bot_branches"), "bot_branches", errors, BRANCH_GLOB, "branch glob", 10)
+        _str_list(doc.get("bot_authors"), "bot_authors", errors, EMAIL, "email", 10)
+        answer = _section(doc, "triage", ("enabled", "max_age_days", "max_attempts"), errors)
+        if "answer" in doc:
+            errors.append("answer: use either triage (version 1) or answer (version 2)")
+    else:
+        answer = _section(doc, "answer", ("enabled", "max_attempts"), errors)
+    p["answer"]["enabled"] = _bool(answer.get("enabled"), "answer.enabled", True, errors)
+    p["answer"]["max_attempts"] = _clamp_int(answer.get("max_attempts"), "answer.max_attempts", 1, MAX_ATTEMPTS_CAP, 2, errors)
+
+    fix = _section(doc, "fix", ("enabled", "trigger", "max_attempts", "step_limit"), errors)
+    p["fix"]["enabled"] = _bool(fix.get("enabled"), "fix.enabled", True, errors)
+    trigger = fix.get("trigger", "maintainers")
+    if trigger not in ("maintainers", "label"):
+        errors.append("fix.trigger: must be maintainers or label")
+    else:
+        p["fix"]["trigger"] = trigger
+    p["fix"]["max_attempts"] = _clamp_int(fix.get("max_attempts"), "fix.max_attempts", 1, MAX_ATTEMPTS_CAP, 2, errors)
+    p["fix"]["step_limit"] = _clamp_int(fix.get("step_limit"), "fix.step_limit", 10, MAX_STEP_LIMIT, 80, errors)
+
+    review = _section(doc, "review", ("enabled", "max_comments", "max_diff_lines", "max_attempts"), errors)
+    p["review"]["enabled"] = _bool(review.get("enabled"), "review.enabled", True, errors)
+    p["review"]["max_comments"] = _clamp_int(review.get("max_comments"), "review.max_comments", 0, 100, 20, errors)
+    p["review"]["max_diff_lines"] = _clamp_int(review.get("max_diff_lines"), "review.max_diff_lines", 100, 100000, 5000, errors)
+    p["review"]["max_attempts"] = _clamp_int(review.get("max_attempts"), "review.max_attempts", 1, MAX_ATTEMPTS_CAP, 2, errors)
+
     if errors:
         raise PolicyError("\n".join(errors))
     return p
