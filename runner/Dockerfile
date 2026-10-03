@@ -44,8 +44,8 @@ RUN useradd --create-home --uid 10001 agent \
     && chown agent:agent /work /out
 
 ARG AGENT_VERSION=dev
-COPY --chmod=0644 config/ /opt/agent/config/
-COPY --chmod=0644 playbooks/ /opt/agent/playbooks/
+COPY --chmod=0755 config/ /opt/agent/config/
+COPY --chmod=0755 playbooks/ /opt/agent/playbooks/
 COPY --chmod=0755 entrypoint.sh run-agent.sh publish.sh sanitize.py policy.py /opt/agent/
 RUN echo "${AGENT_VERSION}" > /opt/agent/VERSION
 

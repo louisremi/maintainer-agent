@@ -89,6 +89,8 @@ describe('HTTP server (end to end, fake GitHub and sandbox)', () => {
 
   it('rejects webhooks for unknown connections and with bad signatures', async () => {
     await hook('nope', 'ping', {}, 'env-secret').expect(404);
+    await request(http.getHttpServer()).post('/webhooks/nope').expect(404);
+    await request(http.getHttpServer()).post('/webhooks/env').expect(401);
     await hook('env', 'ping', {}, 'wrong-secret').expect(401);
     await hook('env', 'ping', { zen: 'x' }, 'env-secret').expect(202);
   });

@@ -14,10 +14,10 @@ export class WebhooksController {
   @HttpCode(202)
   async receive(@Param('connectionId') connectionId: string, @Req() req: RawRequest): Promise<{ status: string; detail?: string }> {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(connectionId)) throw new HttpException({ status: 'unknown connection' }, 404);
-    if (!req.rawBody) throw new HttpException({ status: 'raw body unavailable' }, 400);
+    // An empty or non-JSON body has no raw body: verify (and fail) on an empty one.
     const headers: Record<string, string | undefined> = {};
     for (const [k, v] of Object.entries(req.headers)) headers[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
-    const r = await this.ingress.receive({ connectionId, headers, rawBody: req.rawBody });
+    const r = await this.ingress.receive({ connectionId, headers, rawBody: req.rawBody ?? Buffer.alloc(0) });
     switch (r.kind) {
       case 'unknown-connection': throw new HttpException({ status: 'unknown connection' }, 404);
       case 'bad-signature': throw new HttpException({ status: 'invalid signature' }, 401);
