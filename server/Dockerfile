@@ -4,6 +4,11 @@
 # and runs the agents as sibling containers of the runner image through the
 # Docker API (see compose.example.yaml at the repository root).
 FROM node:24-trixie-slim AS build
+# Toolchain for native modules (better-sqlite3) when no prebuilt binary fits.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./

@@ -6,12 +6,17 @@ img="${1:?usage: smoke-image.sh <image>}"
 run() { docker run --rm -i --network none "$@"; }
 fail() { echo "smoke: $*" >&2; exit 1; }
 
-run --entrypoint bash "${img}" -c 'mini --help >/dev/null && hadolint --version >/dev/null \
-  && shellcheck --version >/dev/null && tinyproxy -v && git --version && jq --version && node --version \
-  && ! command -v gh && [ "$(id -u)" = 10001 ] \
-  && test -f /opt/agent/config/mswea-issue.yaml -a -f /opt/agent/config/mswea-fix.yaml -a -f /opt/agent/config/mswea-review.yaml \
-  && test -f /opt/agent/playbooks/issue.md -a -f /opt/agent/playbooks/implement.md -a -f /opt/agent/playbooks/review.md' \
-  || fail "tools or files missing"
+# One check per line, so that a failure names itself.
+run --entrypoint bash "${img}" -c '
+  set -u; bad=0
+  chk() { if eval "$1" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; bad=1; fi; }
+  chk "mini --help"; chk "hadolint --version"; chk "shellcheck --version"; chk "command -v tinyproxy"
+  chk "git --version"; chk "jq --version"; chk "node --version"; chk "curl --version"
+  chk "! command -v gh"; chk "[ \"\$(id -u)\" = 10001 ]"
+  for f in config/mswea-issue.yaml config/mswea-fix.yaml config/mswea-review.yaml \
+           playbooks/issue.md playbooks/implement.md playbooks/review.md \
+           run-agent.sh publish.sh sanitize.py policy.py; do chk "test -r /opt/agent/$f"; done
+  exit "$bad"' || fail "tools or files missing"
 
 # sanitize: text and JSON modes, repository URL on any forge.
 [[ "$(printf 'hello #1\n' | run --env REPO=o/r "${img}" sanitize)" == "hello #1" ]] || fail "sanitize text mode"
