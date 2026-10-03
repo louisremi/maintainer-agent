@@ -14,7 +14,7 @@ remaining work in priority order. Then read [README.md](README.md),
 | google/ax | Evaluated and rejected for now: needs Kubernetes + Agent Substrate, Gemini-only, alpha (README "Why not google/ax?"). The sandbox sits behind ports to allow an AX backend later. |
 | GitLab | Designed, not implemented ([docs/forges.md](docs/forges.md)). |
 | Model for the first deployment | The dual-R9700 machine (tailscale `100.123.169.10`): `LLM_API_BASE=http://100.123.169.10:8004/v1`, `LLM_MODEL=openai/qwen3.8-flash-next` (vLLM, 131k context). Reachable from nasbrico's Docker containers through the egress proxy (verified with the v0.1 image: proxy → model 200, everything else refused). |
-| Host | nasbrico (Unraid, `ssh 192.168.1.60`). The **paused** v0.1 install lives in `/boot/config/plugins/user.scripts/scripts/maintainer-agent/` (never scheduled, tokens empty): delete it. |
+| Host | nasbrico (Unraid, `ssh 192.168.1.60`). Nothing of maintainer-agent is installed (the paused v0.1 files and image were deleted on 2026-10-03). |
 | First watched repo | `louisremi/deepseek-harness-docker-dev`: has a v0.1 policy (still valid), `review-gate.yml` pinned to v0.1.1, `failure-to-issue.yml` calling the removed `ci-failure-issue.yml@232feca` (keeps working at that SHA; remove it when v0.2 runs). Branch protection, `agent-review`/`no-review` environments, Renovate App already set up. |
 
 ### Proven (locally)
@@ -33,7 +33,7 @@ remaining work in priority order. Then read [README.md](README.md),
 3. **Deploy on nasbrico** with `compose.example.yaml`: `DATA_DIR=/mnt/user/appdata/maintainer-agent` (same path inside the container), `SECRETS_KEY`, the model above. Check `/healthz`, read the admin password from the logs.
 4. **Create the GitHub App** from `/admin` for `louisremi`, install it on `deepseek-harness-docker-dev` (and a second repo to prove multi-repo). Verify in order: labels created; a question issue → answer; a maintainer bug issue → answer + draft PR + link comment; a PR → comment-only review; `DATA_DIR/jobs/*/logs/*-egress.log` show only allowed hosts.
 5. **Tune prompts** on real runs (answer quality, review comment placement, fix success); add sanitiser tests for any change.
-6. **Release v0.2.0**: tag, then in `deepseek-harness-docker-dev` remove `failure-to-issue.yml`, optionally re-pin `review-gate.yml`, migrate its policy to `version: 2` (`triage` → `answer`, `playbooks.triage` → `playbooks.issue`, add a `review` playbook), and delete the paused v0.1 files on nasbrico.
+6. **Release v0.2.0**: tag, then in `deepseek-harness-docker-dev` remove `failure-to-issue.yml`, optionally re-pin `review-gate.yml`, and migrate its policy to `version: 2` (`triage` → `answer`, `playbooks.triage` → `playbooks.issue`, add a `review` playbook).
 
 ## Later
 - GitLab adapter (docs/forges.md), with the same adapter test set as GitHub.
