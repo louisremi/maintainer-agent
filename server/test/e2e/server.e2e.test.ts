@@ -50,6 +50,7 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 			GITHUB_APP_SLUG: "ma-env",
 			GITHUB_PRIVATE_KEY: TEST_PEM,
 			GITHUB_WEBHOOK_SECRET: "env-secret",
+			PUBLIC_PATHS_ONLY_VIA_HOST: "agent.example.org",
 		});
 		app = buildApp(config, {
 			fetch: api.fetch,
@@ -290,5 +291,42 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 				.get(connectionId) as { credentials: string }
 		).credentials;
 		expect(raw).not.toContain("org-secret");
+	});
+
+	it("only serves GitHub's routes on the public host name", async () => {
+		const pub = (r: request.Test) => r.set("host", "agent.example.org");
+		await pub(request(http.getHttpServer()).get("/admin")).expect(404);
+		await pub(
+			request(http.getHttpServer())
+				.get("/admin")
+				.set("authorization", basic(ADMIN)),
+		).expect(404);
+		await pub(
+			request(http.getHttpServer())
+				.post("/admin/github/register")
+				.set("authorization", basic(ADMIN))
+				.set("origin", "https://agent.example.org"),
+		).expect(404);
+		await pub(request(http.getHttpServer()).get("/")).expect(404);
+		await pub(request(http.getHttpServer()).get("/healthz")).expect(200);
+		await pub(
+			request(http.getHttpServer()).get(
+				"/admin/github/callback?state=x&code=y",
+			),
+		).expect(400);
+		await pub(request(http.getHttpServer()).post("/webhooks/nope")).expect(404);
+		await pub(request(http.getHttpServer()).post("/webhooks/env")).expect(401);
+		// A forwarded public host cannot be used to reach the admin pages either.
+		await request(http.getHttpServer())
+			.get("/admin")
+			.set("x-forwarded-host", "Agent.Example.org:443")
+			.set("authorization", basic(ADMIN))
+			.expect(404);
+		// Other host names (LAN, tailnet) keep the admin pages.
+		await request(http.getHttpServer())
+			.get("/admin")
+			.set("host", "192.168.1.60:3000")
+			.set("authorization", basic(ADMIN))
+			.expect(200);
 	});
 });

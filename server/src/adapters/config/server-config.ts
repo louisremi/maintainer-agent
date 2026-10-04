@@ -41,6 +41,11 @@ export const ConfigSchema = z.object({
 	GITHUB_APP_SLUG: z.string().optional(),
 	GITHUB_HOST: z.string().default("github.com"),
 	DOCKER_PULL: z.enum(["always", "missing", "never"]).default("missing"),
+	/** Host name of PUBLIC_URL on which only GitHub's routes answer (admin stays private). */
+	PUBLIC_PATHS_ONLY_VIA_HOST: z
+		.string()
+		.regex(/^[a-z0-9.-]+$/i)
+		.optional(),
 });
 
 export type ServerConfig = z.infer<typeof ConfigSchema>;

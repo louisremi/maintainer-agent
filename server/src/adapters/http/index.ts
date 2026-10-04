@@ -3,6 +3,7 @@ export * from "./admin-application";
 export * from "./admin-auth.guard";
 export * from "./errors.filter";
 export * from "./health.controller";
+export * from "./public-host-filter";
 export * from "./tokens";
 export * from "./webhook-ingress";
 export * from "./webhooks.controller";

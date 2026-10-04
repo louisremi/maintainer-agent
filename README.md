@@ -83,6 +83,7 @@ per repository lives in the repository's policy file.
 | `ISSUE_STEP_LIMIT`, `REVIEW_STEP_LIMIT` | `30`, `40` | Agent steps for answers and reviews. |
 | `JOB_RETENTION_DAYS` | `14` | Finished jobs and their logs are deleted after this. |
 | `GIT_AUTHOR` | `maintainer-agent <maintainer-agent@users.noreply.github.com>` | Author of proposed commits. |
+| `PUBLIC_PATHS_ONLY_VIA_HOST` | none | Host name of `PUBLIC_URL`. On it, only `POST /webhooks/*`, `GET /admin/github/callback` and `GET /healthz` answer; use `/admin` through another address (LAN, VPN). |
 | `DOCKER_PULL` | `missing` | Pull the runner image at start (`always`, `missing`, `never`). |
 
 ## Repository policy

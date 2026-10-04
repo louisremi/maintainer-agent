@@ -2,7 +2,7 @@ import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
-import { ErrorsFilter } from "../adapters/http";
+import { ErrorsFilter, publicHostFilter } from "../adapters/http";
 import type { App } from "./container";
 import { HttpModule } from "./http.module";
 
@@ -20,6 +20,9 @@ export async function createHttpServer(app: App): Promise<INestApplication> {
 	nest.useBodyParser("urlencoded", { extended: false, limit: "64kb" });
 	nest.useGlobalFilters(new ErrorsFilter(app.log));
 	nest.disable("x-powered-by");
+	if (app.config.PUBLIC_PATHS_ONLY_VIA_HOST) {
+		nest.use(publicHostFilter(app.config.PUBLIC_PATHS_ONLY_VIA_HOST));
+	}
 	nest.enableShutdownHooks();
 	return nest;
 }

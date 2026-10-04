@@ -20,6 +20,8 @@ services:
       - "3000:3000"
     environment:
       PUBLIC_URL: https://agent.example.org
+      # Keep /admin off the public URL; reach it on the published LAN port instead.
+      # PUBLIC_PATHS_ONLY_VIA_HOST: agent.example.org
       LLM_API_BASE: http://192.0.2.10:8000/v1       # any OpenAI-compatible endpoint
       LLM_MODEL: openai/your-model                   # litellm model name
       # LLM_API_KEY: ...
