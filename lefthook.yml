@@ -1,0 +1,22 @@
+# Git hooks (https://lefthook.dev), installed by `pnpm install` in server/
+# (its `prepare` script). Run one by hand with
+# `server/node_modules/.bin/lefthook run pre-push`. CI runs the same checks,
+# so skipping a hook (--no-verify) only delays the failure.
+pre-commit:
+  commands:
+    biome:
+      root: server/
+      glob: "*.{ts,mts,cts,js,mjs,cjs,json,jsonc}"
+      # Format and apply safe fixes to the staged files, then re-stage them.
+      run: npx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    biome:
+      run: cd server && npx biome check --error-on-warnings .
+    typecheck:
+      run: cd server && npx tsc -p tsconfig.json --noEmit
+    architecture:
+      run: cd server && npx depcruise src --config .dependency-cruiser.cjs

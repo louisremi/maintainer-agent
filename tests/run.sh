@@ -27,6 +27,7 @@ check "templates are valid policy" bash -c 'python3 runner/policy.py < templates
 check "no project-specific leftovers" bash -c '! git grep -n -I -E "deepseek-harness|nasbrico|100\.67\.|100\.123\.|Qwen|qwen3|static-check\.sh|hub\.docker\.com" -- ":!README.md" ":!PLAN.md" ":!tests/run.sh" ":!server/pnpm-lock.yaml"'
 
 if [[ -d server/node_modules ]] || { have pnpm && (cd server && pnpm install --frozen-lockfile >/dev/null); }; then
+  check "server lint and formatting (biome)" bash -c 'cd server && pnpm -s check:style'
   check "server typecheck" bash -c 'cd server && pnpm -s typecheck'
   check "server architecture rules" bash -c 'cd server && pnpm -s arch >/dev/null'
   check "server architecture rules catch violations" tests/arch-violation.sh

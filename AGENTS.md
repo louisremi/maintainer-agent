@@ -13,6 +13,8 @@ Rules for humans and coding agents changing this repository.
 | `server/src/adapters/` | Ports' implementations: `http`, `worker`, `forges/github`, `persistence/sqlite`, `sandbox/docker`, `workspace`, ... |
 | `server/src/bootstrap/` | Composition root: the only place that knows every adapter. |
 | `server/.dependency-cruiser.cjs` | Architecture rules (`pnpm arch`). |
+| `server/biome.json` | Linting and formatting of the server ([Biome](https://biomejs.dev)). |
+| `lefthook.yml` | Git hooks: format staged files on commit; Biome, typecheck and architecture rules on push. |
 | `runner/Dockerfile` | The runner image (one image, several roles). Every pin carries a `# renovate:` comment. |
 | `runner/entrypoint.sh` | Roles: `issue-agent`, `fix-agent`, `review-agent`, `publish`, `sanitize`, `policy`, `egress`, `version`. |
 | `runner/run-agent.sh` | Runs mini-swe-agent for one task and collects its result. |
@@ -59,7 +61,12 @@ Rules for humans and coding agents changing this repository.
 
 ## Dev loop
 
-`tests/run.sh` before every push (needs `pnpm install` in `server/` once);
+`pnpm install` in `server/` installs the git hooks ([lefthook.yml](lefthook.yml)):
+pre-commit formats and fixes staged files with Biome, pre-push runs Biome,
+the typecheck and the architecture rules. Do not bypass them with
+`--no-verify`; CI runs the same checks (`lint (biome)` job) and blocks the
+merge. `pnpm fix` applies Biome's formatting and safe fixes to everything.
+`tests/run.sh` before every push;
 build the images and run `tests/smoke-image.sh` / `tests/smoke-server.sh`
 when `runner/` or `server/` change. Use the [glossary](docs/glossary.md)'s
 terms in code and docs. Releases: tag `vX.Y.Z` on `main`; CI publishes

@@ -223,8 +223,9 @@ added later; see [docs/architecture.md](docs/architecture.md).
 ## Development
 
 ```bash
-(cd server && pnpm install)
-tests/run.sh    # shellcheck, hadolint, actionlint, runner tests, server typecheck + architecture rules + tests
+(cd server && pnpm install)   # also installs the git hooks (lefthook.yml)
+(cd server && pnpm fix)       # Biome: format and apply safe lint fixes
+tests/run.sh    # shellcheck, hadolint, actionlint, runner tests, server Biome + typecheck + architecture rules + tests
 docker build -t maintainer-agent:dev runner/ && tests/smoke-image.sh maintainer-agent:dev
 docker build -t maintainer-agent-server:dev server/ && tests/smoke-server.sh maintainer-agent-server:dev
 ```

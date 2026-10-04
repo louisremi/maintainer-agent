@@ -1,0 +1,3 @@
+# Bulk reformatting commits, ignored by `git blame` (git config blame.ignoreRevsFile .git-blame-ignore-revs).
+# Biome adoption
+1e1469111daa42d01641ddaace70b319434d08c9

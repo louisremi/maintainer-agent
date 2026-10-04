@@ -20,6 +20,24 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  lint:
+    name: lint (biome)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install server dependencies
+        working-directory: server
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Biome (lint and formatting)
+        working-directory: server
+        run: pnpm exec biome ci --reporter=github --error-on-warnings .
+
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -55,7 +73,7 @@ jobs:
         run: tests/run.sh
 
   image:
-    needs: test
+    needs: [lint, test]
     strategy:
       fail-fast: false
       matrix:
