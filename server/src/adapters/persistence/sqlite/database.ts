@@ -1,11 +1,11 @@
-import Database from 'better-sqlite3';
-import { chmodSync, existsSync } from 'node:fs';
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { UnitOfWork } from '../../../shared-kernel';
+import { AsyncLocalStorage } from "node:async_hooks";
+import { chmodSync, existsSync } from "node:fs";
+import Database from "better-sqlite3";
+import type { UnitOfWork } from "../../../shared-kernel";
 
 const MIGRATIONS: readonly string[] = [
-  // 1: initial schema
-  `
+	// 1: initial schema
+	`
   CREATE TABLE connections (
     id TEXT PRIMARY KEY,
     platform TEXT NOT NULL,
@@ -59,24 +59,24 @@ const MIGRATIONS: readonly string[] = [
 
 /** Opens (and migrates) the state database. The file is readable by its owner only. */
 export function openDatabase(file: string): Database.Database {
-  const isNew = file !== ':memory:' && !existsSync(file);
-  const db = new Database(file);
-  if (isNew) chmodSync(file, 0o600);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.pragma('busy_timeout = 5000');
-  migrate(db);
-  return db;
+	const isNew = file !== ":memory:" && !existsSync(file);
+	const db = new Database(file);
+	if (isNew) chmodSync(file, 0o600);
+	db.pragma("journal_mode = WAL");
+	db.pragma("foreign_keys = ON");
+	db.pragma("busy_timeout = 5000");
+	migrate(db);
+	return db;
 }
 
 export function migrate(db: Database.Database): void {
-  const current = db.pragma('user_version', { simple: true }) as number;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    db.transaction(() => {
-      db.exec(MIGRATIONS[v]!);
-      db.pragma(`user_version = ${v + 1}`);
-    })();
-  }
+	const current = db.pragma("user_version", { simple: true }) as number;
+	MIGRATIONS.slice(current).forEach((sql, i) => {
+		db.transaction(() => {
+			db.exec(sql);
+			db.pragma(`user_version = ${current + i + 1}`);
+		})();
+	});
 }
 
 /**
@@ -86,27 +86,29 @@ export function migrate(db: Database.Database): void {
  * scopes free of network calls.
  */
 export class SqliteUnitOfWork implements UnitOfWork {
-  private readonly scope = new AsyncLocalStorage<true>();
-  private queue: Promise<unknown> = Promise.resolve();
+	private readonly scope = new AsyncLocalStorage<true>();
+	private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly db: Database.Database) {}
+	constructor(private readonly db: Database.Database) {}
 
-  run<T>(work: () => Promise<T>): Promise<T> {
-    if (this.scope.getStore()) return work();
-    const next = this.queue.then(() => this.scope.run(true, () => this.transaction(work)));
-    this.queue = next.catch(() => undefined);
-    return next;
-  }
+	run<T>(work: () => Promise<T>): Promise<T> {
+		if (this.scope.getStore()) return work();
+		const next = this.queue.then(() =>
+			this.scope.run(true, () => this.transaction(work)),
+		);
+		this.queue = next.catch(() => undefined);
+		return next;
+	}
 
-  private async transaction<T>(work: () => Promise<T>): Promise<T> {
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = await work();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (err) {
-      if (this.db.inTransaction) this.db.exec('ROLLBACK');
-      throw err;
-    }
-  }
+	private async transaction<T>(work: () => Promise<T>): Promise<T> {
+		this.db.exec("BEGIN IMMEDIATE");
+		try {
+			const result = await work();
+			this.db.exec("COMMIT");
+			return result;
+		} catch (err) {
+			if (this.db.inTransaction) this.db.exec("ROLLBACK");
+			throw err;
+		}
+	}
 }

@@ -13,8 +13,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "arch": "depcruise src --config .dependency-cruiser.cjs",
+    "lint": "biome lint --error-on-warnings .",
+    "format": "biome format --write .",
+    "check:style": "biome check --error-on-warnings .",
+    "fix": "biome check --write .",
+    "check": "pnpm check:style && pnpm typecheck && pnpm arch && pnpm test",
     "start": "node dist/bootstrap/main.js",
-    "check": "pnpm typecheck && pnpm arch && pnpm test"
+    "prepare": "[ -d ../.git ] && lefthook install || true"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.2",
@@ -29,12 +34,14 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "better-sqlite3",
       "@swc/core",
-      "esbuild"
+      "better-sqlite3",
+      "esbuild",
+      "lefthook"
     ]
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@nestjs/testing": "^12.1.2",
     "@swc/core": "^1.16.13",
     "@types/better-sqlite3": "^9.6.0",
@@ -43,6 +50,7 @@
     "@types/node": "^24.19.1",
     "@types/supertest": "^7.2.1",
     "dependency-cruiser": "^18.5.0",
+    "lefthook": "2.1.16",
     "nock": "^14.0.17",
     "supertest": "^7.3.1",
     "typescript": "^5.9.3",
