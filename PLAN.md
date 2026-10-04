@@ -14,7 +14,7 @@ remaining work in priority order. Then read [README.md](README.md),
 | google/ax | Evaluated and rejected for now: needs Kubernetes + Agent Substrate, Gemini-only, alpha (README "Why not google/ax?"). The sandbox sits behind ports to allow an AX backend later. |
 | GitLab | Designed, not implemented ([docs/forges.md](docs/forges.md)). |
 | Model for the first deployment | The dual-R9700 machine (tailscale `100.123.169.10`): `LLM_API_BASE=http://100.123.169.10:8004/v1`, `LLM_MODEL=openai/qwen3.8-flash-next` (vLLM, 131k context). Reachable from nasbrico's Docker containers through the egress proxy (verified with the v0.1 image: proxy → model 200, everything else refused). |
-| Host | nasbrico (Unraid, `ssh 192.168.1.60`). Nothing of maintainer-agent is installed (the paused v0.1 files and image were deleted on 2026-10-03). |
+| Host | nasbrico (Unraid, `ssh 192.168.1.60`). **Server deployed 2026-10-04** as Compose Manager project `MaintainerAgent` (`/mnt/user/appdata/compose-manager/maintainer-agent/`, secrets in its `.env`: `SECRETS_KEY`, `ADMIN_TOKEN`), image `sha-ea70d63316cc`, `DATA_DIR=/mnt/cache/appdata/maintainer-agent`, `ALLOWED_ACCOUNTS=louisremi`. Public URL `https://maintainer-agent.tail668c20.ts.net` via tsdproxy (`tailscale_funnel` label; tailnet policy `nodeAttrs` grants `funnel` to `100.104.125.25`); only webhooks, the app callback and `/healthz` answer there (`PUBLIC_PATHS_ONLY_VIA_HOST`). Admin: `http://192.168.1.60:3000/admin`. Verified: Docker access from the server, `policy` role, egress proxy (model 200, others refused). No GitHub App yet. |
 | First watched repo | `louisremi/deepseek-harness-docker-dev`: has a v0.1 policy (still valid), `review-gate.yml` pinned to v0.1.1, `failure-to-issue.yml` calling the removed `ci-failure-issue.yml@232feca` (keeps working at that SHA; remove it when v0.2 runs). Branch protection, `agent-review`/`no-review` environments, Renovate App already set up. |
 
 ### Proven (locally)
@@ -28,8 +28,7 @@ remaining work in priority order. Then read [README.md](README.md),
 ## Next steps (in order)
 
 1. ~~Push~~ done: both images build and pass their smoke tests on CI. Until v0.2.0 is tagged, deploy with `:latest` or a `sha-<commit>` tag (the compose example and `RUNNER_IMAGE` default name `v0.2.0`).
-2. **Public HTTPS URL for nasbrico** (user's choice: Tailscale Funnel or Cloudflare Tunnel) → `PUBLIC_URL`.
-3. **Deploy on nasbrico** with `compose.example.yaml`: `DATA_DIR=/mnt/user/appdata/maintainer-agent` (same path inside the container), `SECRETS_KEY`, the model above. Check `/healthz`, read the admin password from the logs.
+2. ~~Public URL~~ and 3. ~~Deploy on nasbrico~~: done (see "Host" above). To upgrade: change both `sha-` tags in the compose file, `docker compose -p maintainer-agent up -d`.
 4. **Create the GitHub App** from `/admin` for `louisremi`, install it on `deepseek-harness-docker-dev` (and a second repo to prove multi-repo). Verify in order: labels created; a question issue → answer; a maintainer bug issue → answer + draft PR + link comment; a PR → comment-only review; `DATA_DIR/jobs/*/logs/*-egress.log` show only allowed hosts.
 5. **Tune prompts** on real runs (answer quality, review comment placement, fix success); add sanitiser tests for any change.
 6. **Release v0.2.0**: tag, then in `deepseek-harness-docker-dev` remove `failure-to-issue.yml`, optionally re-pin `review-gate.yml`, and migrate its policy to `version: 2` (`triage` → `answer`, `playbooks.triage` → `playbooks.issue`, add a `review` playbook).
