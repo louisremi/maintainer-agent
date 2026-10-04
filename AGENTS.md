@@ -64,8 +64,8 @@ Rules for humans and coding agents changing this repository.
 `pnpm install` in `server/` installs the git hooks ([lefthook.yml](lefthook.yml)):
 pre-commit formats and fixes staged files with Biome, pre-push runs Biome,
 the typecheck and the architecture rules. Do not bypass them with
-`--no-verify`; CI runs the same checks (`lint (biome)` job) and blocks the
-merge. `pnpm fix` applies Biome's formatting and safe fixes to everything.
+`--no-verify`; CI runs the same checks, and `lint (biome)` and `test` are
+required status checks on `main` (pull requests cannot merge without them). `pnpm fix` applies Biome's formatting and safe fixes to everything.
 `tests/run.sh` before every push;
 build the images and run `tests/smoke-image.sh` / `tests/smoke-server.sh`
 when `runner/` or `server/` change. Use the [glossary](docs/glossary.md)'s
