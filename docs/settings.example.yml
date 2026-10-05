@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/louisremi/maintainer-agent/main/docs/settings.schema.json
+#
+# maintainer-agent settings. Reference: docs/settings.md
+#
+# - Lives in the folder mounted at /config (CONFIG_DIR), next to secrets.yaml.
+# - `version` is the schema version: the server migrates older files on start
+#   (a backup is written to /config/backups first).
+# - Changes apply when the server restarts; saving from /admin restarts it.
+# - Secret fields take a {MA_NAME} placeholder, resolved from Docker secrets,
+#   the container environment, or secrets.yaml (in that order).
+# - Check a file without starting the server:
+#     docker run --rm -v ./config:/config louisremi/maintainer-agent-server validate-config
+version: 1
+
+server:
+  # HTTPS URL where GitHub reaches this server (webhooks, app registration).
+  public_url: https://agent.example.org
+  # Optional: on this host name only GitHub's routes answer; use /admin on
+  # another address (LAN, VPN).
+  # public_paths_only_via_host: agent.example.org
+  admin_token: "{MA_ADMIN_TOKEN}"
+  # Accounts whose repositories this server may serve (required for public apps).
+  allowed_accounts: [your-user]
+  runner_image: louisremi/maintainer-agent:latest
+  max_concurrent_jobs: 1          # one is right for a single-GPU model server
+  # Host caps: nothing below (nor a repository's own policy file) can exceed them.
+  limits:
+    max_step_limit: 120
+    max_attempts: 5
+    max_jobs_per_author_per_day: 5
+
+# Named OpenAI-compatible endpoints. `default` is used unless a repository
+# selects another, for every job or per job (answer, fix, review).
+models:
+  default:
+    api_base: http://192.0.2.10:8000/v1
+    model: openai/your-model
+    # api_key: "{MA_LLM_API_KEY}"
+  # big:
+  #   api_base: http://192.0.2.11:8004/v1
+  #   model: openai/a-bigger-model
+
+# Forge accounts (GitHub Apps). Created for you by /admin → "Create the app
+# on GitHub", which also stores the app's secrets in secrets.yaml.
+# The key is the webhook path: PUBLIC_URL/webhooks/<key>.
+connections: {}
+#  your-user:
+#    platform: github
+#    host: github.com
+#    app_id: "123456"
+#    app_slug: maintainer-agent-abc123
+#    private_key: "{MA_GITHUB_YOUR_USER_PRIVATE_KEY}"
+#    webhook_secret: "{MA_GITHUB_YOUR_USER_WEBHOOK_SECRET}"
+
+# Applies to every repository. A repository entry overrides it per key:
+# maps merge, lists replace, an omitted key inherits.
+defaults:
+  model: default
+  answer: { enabled: true, max_attempts: 2, step_limit: 30 }
+  fix:
+    enabled: true
+    trigger: maintainers   # or `label`: only after a maintainer adds agent-fix
+    max_attempts: 2
+    step_limit: 80
+  review: { enabled: true, max_comments: 20, max_diff_lines: 5000, step_limit: 40 }
+
+# Only these repositories are acted on (keyed host/owner/name). Install the
+# app on them; repositories the app reaches but that are not listed are
+# shown in /admin with a snippet to paste here.
+repositories: {}
+#  github.com/your-user/your-repo: {}
+#  github.com/your-user/another-repo:
+#    model: { fix: big }
+#    fix: { step_limit: 100 }
+#    egress: [registry.npmjs.org, pypi.org]
+#    checks: [npm test]
+#  github.com/your-user/paused-repo:
+#    enabled: false
