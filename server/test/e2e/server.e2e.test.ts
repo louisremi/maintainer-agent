@@ -325,6 +325,12 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 		).expect(404);
 		await pub(request(http.getHttpServer()).get("/")).expect(404);
 		await pub(request(http.getHttpServer()).get("/healthz")).expect(200);
+		const installed = await pub(
+			request(http.getHttpServer()).get(
+				"/installed?installation_id=1&setup_action=install",
+			),
+		).expect(200);
+		expect(installed.text).toContain("maintainer-agent is installed");
 		await pub(
 			request(http.getHttpServer()).get(
 				"/admin/github/callback?state=x&code=y",

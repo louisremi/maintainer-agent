@@ -54,7 +54,8 @@ export class GithubAppRegistrationGateway implements AppRegistrationGateway {
 				active: true,
 			},
 			redirect_url: `${base}/admin/github/callback`,
-			setup_url: `${base}/admin`,
+			// Public landing page after installation (the admin pages may be private).
+			setup_url: `${base}/installed`,
 			setup_on_update: false,
 			public: connection.isPublic,
 			default_permissions: APP_PERMISSIONS,

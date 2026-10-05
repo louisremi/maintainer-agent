@@ -106,6 +106,7 @@ describe("GitHub App manifest flow", () => {
 		expect(m.hook_attributes.url).toBe(
 			"https://agent.example.org/webhooks/AbCdEf123456",
 		);
+		expect(m.setup_url).toBe("https://agent.example.org/installed");
 		expect(m.redirect_url).toBe(
 			"https://agent.example.org/admin/github/callback",
 		);

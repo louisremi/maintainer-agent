@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from "express";
 const PUBLIC_ROUTES: readonly { method: string; path: RegExp }[] = [
 	{ method: "POST", path: /^\/webhooks\/[A-Za-z0-9_-]{1,64}$/ },
 	{ method: "GET", path: /^\/admin\/github\/callback$/ },
+	{ method: "GET", path: /^\/installed$/ },
 	{ method: "GET", path: /^\/healthz$/ },
 ];
 
