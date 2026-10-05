@@ -209,33 +209,49 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 	});
 
 	it("runs the manifest flow for a second app with its own webhook secret", async () => {
-		await request(http.getHttpServer())
-			.post("/admin/github/register")
+		// The admin page embeds a form token; a browser posts it back.
+		const page = await request(http.getHttpServer())
+			.get("/admin")
 			.set("authorization", basic(ADMIN))
-			.type("form")
+			.expect(200);
+		const csrf = /name="_csrf" value="([^"]+)"/.exec(page.text)?.[1] ?? "";
+		expect(csrf).not.toBe("");
+		const post = () =>
+			request(http.getHttpServer())
+				.post("/admin/github/register")
+				.set("authorization", basic(ADMIN))
+				.type("form");
+		// Without the token (a cross-site form), refused, whatever the Origin.
+		await post().send({ host: "github.com" }).expect(403);
+		await post()
+			.set("origin", "https://agent.example.org")
 			.send({ host: "github.com" })
 			.expect(403);
-		const pub = await request(http.getHttpServer())
-			.post("/admin/github/register")
-			.set("authorization", basic(ADMIN))
-			.set("origin", "https://agent.example.org")
-			.type("form")
-			.send({ host: "github.com", public: "1" });
+		// With the token but from another site, refused.
+		await post()
+			.set("origin", "https://evil.example")
+			.send({ host: "github.com", _csrf: csrf })
+			.expect(403);
+		const pub = await post().send({
+			host: "github.com",
+			public: "1",
+			_csrf: csrf,
+		});
 		expect(pub.status).toBe(400);
 		expect(pub.body.message).toMatch(/ALLOWED_ACCOUNTS/);
-		await request(http.getHttpServer())
-			.post("/admin/github/register")
-			.set("authorization", basic(ADMIN))
-			.set("origin", "https://evil.example")
-			.type("form")
-			.send({ host: "github.com" })
-			.expect(403);
-		const start = await request(http.getHttpServer())
-			.post("/admin/github/register")
-			.set("authorization", basic(ADMIN))
-			.set("origin", "https://agent.example.org")
-			.type("form")
-			.send({ host: "github.com", org: "my-org" })
+		// Browsers on the no-referrer admin pages send `Origin: null` (the
+		// regression this covers), or a LAN/tailnet origin matching the Host.
+		await post()
+			.set("origin", "null")
+			.send({ host: "github.com", _csrf: csrf })
+			.expect(200);
+		await post()
+			.set("host", "100.96.232.97:3000")
+			.set("origin", "http://100.96.232.97:3000")
+			.send({ host: "github.com", _csrf: csrf })
+			.expect(200);
+		const start = await post()
+			.send({ host: "github.com", org: "my-org", _csrf: csrf })
 			.expect(200);
 		const action = /action="([^"]+)"/
 			.exec(start.text)![1]!

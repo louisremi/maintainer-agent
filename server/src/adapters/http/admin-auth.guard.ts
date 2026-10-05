@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import {
 	type CanActivate,
 	type ExecutionContext,
@@ -35,7 +35,7 @@ export class AdminAuthGuard implements CanActivate {
 				if (
 					req.method !== "GET" &&
 					req.method !== "HEAD" &&
-					!this.sameOrigin(req)
+					!this.isFromAdminPages(req)
 				) {
 					// Browsers resend Basic credentials on cross-site form posts (CSRF).
 					throw new HttpException("cross-origin request refused", 403);
@@ -53,23 +53,36 @@ export class AdminAuthGuard implements CanActivate {
 		throw new HttpException("authentication required", 401);
 	}
 
-	/** State-changing requests must come from the admin pages themselves. */
-	private sameOrigin(req: Request): boolean {
-		const allowed = new Set([
-			this.auth.origin,
-			`http://${req.headers.host ?? ""}`,
-			`https://${req.headers.host ?? ""}`,
-		]);
+	/**
+	 * State-changing requests must come from the admin pages themselves: they
+	 * carry the form token (see {@link adminFormToken}), and a cross-site
+	 * Origin, when the browser sends one, is refused. `Origin: null` (sent
+	 * because the pages use `Referrer-Policy: no-referrer`) is not an origin.
+	 */
+	private isFromAdminPages(req: Request): boolean {
 		const origin = req.headers.origin;
-		if (origin) return allowed.has(origin);
-		const referer = req.headers.referer;
-		if (referer) {
-			try {
-				return allowed.has(new URL(referer).origin);
-			} catch {
-				return false;
-			}
+		if (origin && origin !== "null") {
+			const allowed = new Set([
+				this.auth.origin,
+				`http://${req.headers.host ?? ""}`,
+				`https://${req.headers.host ?? ""}`,
+			]);
+			if (!allowed.has(origin)) return false;
 		}
-		return false;
+		const body = (req.body ?? {}) as Record<string, unknown>;
+		const given = Buffer.from(String(body._csrf ?? ""));
+		const expected = Buffer.from(adminFormToken(this.auth.token));
+		return given.length === expected.length && timingSafeEqual(given, expected);
 	}
+}
+
+/**
+ * Token embedded in every admin form. Derived from the admin password, so
+ * only someone who could load the admin pages knows it; a cross-site page
+ * cannot read it.
+ */
+export function adminFormToken(adminPassword: string): string {
+	return createHmac("sha256", adminPassword)
+		.update("maintainer-agent admin form")
+		.digest("base64url");
 }

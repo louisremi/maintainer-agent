@@ -13,7 +13,11 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import type { AdminApplication } from "./admin-application";
-import { AdminAuthGuard } from "./admin-auth.guard";
+import {
+	type AdminAuth,
+	AdminAuthGuard,
+	adminFormToken,
+} from "./admin-auth.guard";
 import { esc, page } from "./html";
 import { TOKENS } from "./tokens";
 
@@ -22,7 +26,14 @@ const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i;
 /** Operator pages: connections (GitHub Apps), their repositories, recent jobs. */
 @Controller("admin")
 export class AdminController {
-	constructor(@Inject(TOKENS.admin) private readonly app: AdminApplication) {}
+	private readonly csrf: string;
+
+	constructor(
+		@Inject(TOKENS.admin) private readonly app: AdminApplication,
+		@Inject(TOKENS.adminAuth) auth: AdminAuth,
+	) {
+		this.csrf = adminFormToken(auth.token);
+	}
 
 	@Get()
 	@UseGuards(AdminAuthGuard)
@@ -36,9 +47,9 @@ export class AdminController {
         <p>Status: <b class="${c.status === "active" ? "ok" : "warn"}">${esc(c.status)}</b> · webhook <code>${esc(o.publicUrl)}/webhooks/${esc(c.id)}</code>
         ${c.installUrl ? ` · <a href="${esc(c.installUrl)}" rel="noreferrer">install on repositories</a>` : ""}</p>
         <p>
-          ${c.status === "active" ? `<form class="inline" method="post" action="/admin/connections/${esc(c.id)}/resync"><button>Resync repositories</button></form>` : ""}
-          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/${c.status === "disabled" ? "enable" : "disable"}"><button>${c.status === "disabled" ? "Enable" : "Disable"}</button></form>
-          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/remove" onsubmit="return confirm('Forget this connection? The GitHub App itself is not deleted.')"><button>Remove</button></form>
+          ${c.status === "active" ? `<form class="inline" method="post" action="/admin/connections/${esc(c.id)}/resync"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Resync repositories</button></form>` : ""}
+          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/${c.status === "disabled" ? "enable" : "disable"}"><input type="hidden" name="_csrf" value="${this.csrf}"><button>${c.status === "disabled" ? "Enable" : "Disable"}</button></form>
+          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/remove" onsubmit="return confirm('Forget this connection? The GitHub App itself is not deleted.')"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Remove</button></form>
         </p>
         ${
 					c.repositories.length
@@ -47,7 +58,7 @@ export class AdminController {
 									(r) => `
           <tr><td>${esc(r.path)}</td>
           <td>${r.enabled ? '<span class="ok">enabled</span>' : '<span class="muted">disabled</span>'}${r.contestedBy.length ? ` <span class="warn">also reachable via ${esc(r.contestedBy.join(", "))} (ignored there)</span>` : ""}</td>
-          <td><form class="inline" method="post" action="/admin/repositories/${r.enabled ? "disable" : "enable"}"><input type="hidden" name="repo" value="${esc(r.key)}"><button>${r.enabled ? "Disable" : "Enable"}</button></form></td></tr>`,
+          <td><form class="inline" method="post" action="/admin/repositories/${r.enabled ? "disable" : "enable"}"><input type="hidden" name="_csrf" value="${this.csrf}"><input type="hidden" name="repo" value="${esc(r.key)}"><button>${r.enabled ? "Disable" : "Enable"}</button></form></td></tr>`,
 								)
 								.join("")}</table>`
 						: '<p class="muted">No repositories yet. Install the app on some, then resync.</p>'
@@ -73,7 +84,7 @@ export class AdminController {
       · credentials at rest: ${o.secretsEncrypted ? '<span class="ok">encrypted</span>' : '<span class="warn">not encrypted (set SECRETS_KEY)</span>'}</p>
       <h2>Connections</h2>${connections}
       <h2>Add a GitHub App</h2>
-      <form method="post" action="/admin/github/register"><fieldset>
+      <form method="post" action="/admin/github/register"><input type="hidden" name="_csrf" value="${this.csrf}"><fieldset>
         <label>GitHub host <input name="host" value="github.com" required pattern="[A-Za-z0-9.:-]+"> <span class="muted">github.com, or your GitHub Enterprise Server host</span></label>
         <label>Organization <input name="org" placeholder="leave empty for your personal account" pattern="[A-Za-z0-9-]*"></label>
         <label><input type="checkbox" name="public" value="1"> Public app (installable by other accounts; restrict them with ALLOWED_ACCOUNTS)</label>

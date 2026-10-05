@@ -37,7 +37,7 @@ remaining work in priority order. Then read [README.md](README.md),
 - GitLab adapter (docs/forges.md), with the same adapter test set as GitHub.
 - CI repair (v0.1's `ci-failure-issue.yml`) as a new job kind fed by `check_run`/`workflow_run` events.
 - Re-review on new commits (`synchronize`) as a policy option.
-- A login session instead of Basic auth on `/admin` (POSTs already require a same-origin `Origin`/`Referer`).
+- A login session instead of Basic auth on `/admin` (POSTs already require a per-form token and refuse cross-site origins).
 - Notifications (ntfy/Home Assistant) on `needs-human`.
 - A `LICENSE` (ask the user).
 
