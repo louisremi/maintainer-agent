@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+
+<svg
+   width="800px"
+   height="800px"
+   viewBox="0 0 64 64"
+   version="1.1"
+   id="svg7"
+   sodipodi:docname="walle-female-svgrepo-com.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.746875"
+     inkscape:cx="220.25105"
+     inkscape:cy="504.10042"
+     inkscape:window-width="2560"
+     inkscape:window-height="1403"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg7" />
+  <defs
+     id="defs1">
+    <style
+       id="style1">.cls-1{fill:#ffffff;}.cls-1,.cls-2{stroke:#54596e;stroke-linecap:round;stroke-linejoin:round;stroke-width:2px;}.cls-2,.cls-3{fill:#54596e;}.cls-3{opacity:0.1;}.cls-4{fill:#f99;}.cls-5{fill:#55a6ff;}</style>
+  </defs>
+  <title
+     id="title1">Walle-female</title>
+  <path
+     class="cls-1"
+     d="m 61.025111,35.55443 c 0,-11.744359 -12.989228,-24.848246 -29.02511,-24.848246 -16.035882,0 -29.0251103,13.103887 -29.0251103,24.848246 0,11.744359 12.9892283,17.739387 29.0251103,17.739387 16.035882,0 29.02511,-5.978648 29.02511,-17.739387 z"
+     id="path1"
+     style="stroke:#464d57;stroke-opacity:1" />
+  <path
+     class="cls-2"
+     d="m 53.293818,34.194902 c 0,-7.289038 -9.533078,-15.413448 -21.293817,-15.413448 -11.760739,0 -21.293817,8.18993 -21.293817,15.413448 0,7.223517 9.533078,11.023645 21.293817,11.023645 11.760739,0 21.293817,-3.718228 21.293817,-11.023645 z"
+     id="path2"
+     style="stroke:#464d57;stroke-opacity:1;fill:#464d57;fill-opacity:1" />
+  <ellipse
+     class="cls-5"
+     cx="22.796997"
+     cy="47.192192"
+     rx="6.0605478"
+     ry="4.045825"
+     transform="rotate(-24.3)"
+     id="ellipse6"
+     style="stroke-width:1.63799;fill:#55ffd0;fill-opacity:1" />
+  <ellipse
+     class="cls-5"
+     cx="-20.865486"
+     cy="35.549236"
+     rx="4.045825"
+     ry="6.0605478"
+     transform="rotate(-65.7)"
+     id="ellipse7"
+     style="stroke-width:1.63799;fill:#55ffd0;fill-opacity:1" />
+  <metadata
+     id="metadata7">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>Walle-female</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>

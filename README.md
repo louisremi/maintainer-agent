@@ -1,4 +1,4 @@
-# maintainer-agent
+# <img src="docs/assets/maintainer-agent-logo.svg" alt="" width="40" align="absmiddle"> maintainer-agent
 
 A self-hosted maintainer agent for your repositories. Run one server, connect
 it to GitHub with a GitHub App it creates for you, install the app on the
@@ -45,7 +45,11 @@ Ollama, LM Studio, a hosted API...) reachable from Docker containers.
    **Create the app on GitHub**. GitHub shows the preconfigured app (name,
    permissions, webhook URL); confirm it, and you land on its installation
    page.
-4. Install the app on the repositories you want. That is all a repository
+4. Optional: give the app its avatar. GitHub has no API for this: in the
+   app's settings, under "Display information", upload
+   [docs/assets/maintainer-agent-logo.png](docs/assets/maintainer-agent-logo.png)
+   (200×200) and pick a badge background colour (e.g. `#ffffff`).
+5. Install the app on the repositories you want. That is all a repository
    needs; an optional [policy file](#repository-policy) tailors behaviour.
 
 **Several accounts.** A private GitHub App can only be installed on the
