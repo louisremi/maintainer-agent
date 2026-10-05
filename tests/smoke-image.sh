@@ -41,6 +41,28 @@ for cred in GH_TOKEN=x GITHUB_TOKEN=x GITLAB_TOKEN=x "GIT_AUTH_HEADER=Authorizat
   [[ "${rc}" == 2 ]] || fail "fix-agent must refuse ${cred%%=*} (2), got ${rc}"
 done
 
+# issue-agent on a checkout owned by another user (as the server prepares
+# it): git must accept it. A fake `mini` and a fake model endpoint let the
+# script reach its git step; it then fails only for lack of a verdict (1).
+work="$(mktemp -d)"
+mkdir -p "${work}/repo" "${work}/task" "${work}/out"
+git -C "${work}/repo" init -q
+git -C "${work}/repo" -c user.name=t -c user.email=t@e commit -q --allow-empty -m base
+jq -n '{version: 2, mode: "issue", repository: {}, terms: {}, subject: {labels: []}, comments: [],
+        policy: {instructions: [], playbook: "", protectedPaths: [], checks: []}, priorAnalysis: ""}' > "${work}/task/task.json"
+printf '#!/bin/sh\necho fake-mini\n' > "${work}/mini"
+chmod -R a+rX "${work}"; chmod 777 "${work}/out"; chmod 755 "${work}/mini"
+set +e
+out="$(docker run --rm --user 10001:10001 -v "${work}/repo:/work/repo:ro" -v "${work}/task:/work/task:ro" \
+  -v "${work}/out:/out" -v "${work}/mini:/usr/local/bin/mini:ro" \
+  -e LLM_API_BASE=http://127.0.0.1:8000/v1 -e LLM_MODEL=m --entrypoint bash "${img}" -c '
+    python3 -c "import http.server as h; h.HTTPServer((\"127.0.0.1\", 8000), type(\"H\", (h.BaseHTTPRequestHandler,), {\"do_GET\": lambda s: (s.send_response(200), s.end_headers())})).serve_forever()" &
+    sleep 1; /opt/agent/run-agent.sh issue' 2>&1)"; rc=$?
+set -e
+rm -rf "${work}"
+[[ "${rc}" == 1 && "${out}" == *fake-mini* && "${out}" != *dubious* ]] \
+  || fail "issue-agent must accept a checkout owned by another user (want exit 1 after mini), got ${rc}: ${out}"
+
 # publish: refuses a branch outside maintainer-agent/ before doing anything.
 set +e; run --env GIT_REMOTE_URL=https://example.org/o/r.git --env "GIT_AUTH_HEADER=Authorization: x" \
   --env BASE_SHA="$(printf 'a%.0s' {1..40})" --env BRANCH=main --env "GIT_AUTHOR=a <a@b.c>" "${img}" publish >/dev/null 2>&1; rc=$?; set -e

@@ -40,6 +40,10 @@ out="${AGENT_OUT:-/out}"
 work=/tmp/agent
 mkdir -p "${work}"
 export HOME="${HOME:-/tmp}"
+# The checkout was cloned by the server (another uid): without this, git
+# refuses it ("dubious ownership"). Set for this process tree only, through
+# the environment, so the agent cannot remove it via a config file.
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="${wd}/repo"
 
 # --- model reachable? ------------------------------------------------------------
 auth=()
