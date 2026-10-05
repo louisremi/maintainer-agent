@@ -52,12 +52,12 @@ export class ProposeFix implements JobHandler {
 			};
 		}
 
-		await session.addLabel(job.number, Labels.inProgress);
+		await session.addLabel(job.number, Labels.draftingPr);
 		try {
 			return await this.run(ctx, issue);
 		} finally {
 			await session
-				.removeLabel(job.number, Labels.inProgress)
+				.removeLabel(job.number, Labels.draftingPr)
 				.catch(() => undefined);
 		}
 	}

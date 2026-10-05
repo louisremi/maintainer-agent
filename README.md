@@ -115,7 +115,8 @@ Created on every installed repository:
 | `agent-fix` | a maintainer | Propose a change for this issue. |
 | `agent-rereview` | a maintainer | Review this pull request again (removed afterwards). |
 | `no-agent` | anyone with triage access | Never act on this issue or pull request automatically. |
-| `agent-in-progress` | the agent | A fix is being prepared. |
+| `agent-in-progress` | the agent | The agent is working on it: set as soon as an issue or pull request is picked up, removed when done. |
+| `agent-drafting-pr-in-progress` | the agent | A draft pull request is being prepared for this issue. |
 | `needs-human` | the agent | It gave up, or its output was held back; see its comment. |
 
 ## Security model

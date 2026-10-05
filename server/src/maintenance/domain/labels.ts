@@ -6,8 +6,10 @@ export const Labels = {
 	optOut: "no-agent",
 	/** A maintainer asks for a fresh review of this change request. */
 	rereview: "agent-rereview",
-	/** A job is working on this issue. */
+	/** The agent is working on this issue or change request (set when a job is queued). */
 	inProgress: "agent-in-progress",
+	/** The agent is drafting a change request for this issue. */
+	draftingPr: "agent-drafting-pr-in-progress",
 	/** The agent gave up or its output was held back: a human should look. */
 	needsHuman: "needs-human",
 } as const;
@@ -38,6 +40,11 @@ export const LABEL_DEFINITIONS: readonly LabelDefinition[] = [
 		name: Labels.inProgress,
 		color: "FBCA04",
 		description: "maintainer-agent is working on it",
+	},
+	{
+		name: Labels.draftingPr,
+		color: "FEF2C0",
+		description: "maintainer-agent is drafting a pull request for this",
 	},
 	{
 		name: Labels.needsHuman,

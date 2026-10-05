@@ -283,7 +283,7 @@ export function buildApp(config: ServerConfig, o: Overrides = {}): App {
 	const worker = new JobWorker(runNextJob, config.MAX_CONCURRENT_JOBS, log);
 
 	// ---- Cross-context reactions
-	const maintenanceHandlers = new MaintenanceEventHandlers(forge, log);
+	const maintenanceHandlers = new MaintenanceEventHandlers(forge, jobs, log);
 	events.subscribe((e) => maintenanceHandlers.handle(e));
 	events.subscribe(async (e) => {
 		if (e.type === "maintenance.job-queued") worker.poke();

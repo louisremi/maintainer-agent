@@ -51,7 +51,7 @@ export function maintenanceHarness(opts: { allowList?: string } = {}) {
 	const uow = new DirectUnitOfWork();
 	const ids = new SequentialIds("job");
 	const policies = new RepositoryPolicies(validator, DEFAULT_HOST_LIMITS, log);
-	const handlers = new MaintenanceEventHandlers(forge, log);
+	const handlers = new MaintenanceEventHandlers(forge, jobs, log);
 	events.subscribers.push((e) => handlers.handle(e));
 
 	const handle = new HandleForgeEvent({

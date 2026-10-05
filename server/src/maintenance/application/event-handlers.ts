@@ -4,19 +4,49 @@ import {
 	type Logger,
 	RepoRef,
 } from "../../shared-kernel";
-import { JobEscalated, LABEL_DEFINITIONS, Labels } from "../domain";
-import type { ForgeAccess } from "./ports";
+import {
+	isJobEnded,
+	JobEscalated,
+	JobQueued,
+	LABEL_DEFINITIONS,
+	Labels,
+} from "../domain";
+import type { ForgeAccess, MaintenanceJobRepository } from "./ports";
 import { footer } from "./task-builder";
 
-/** Reacts to events from both contexts with side effects on the forge. */
+/**
+ * Reacts to events from both contexts with side effects on the forge.
+ *
+ * `agent-in-progress` mirrors the jobs: it is added as soon as a job is
+ * queued for an issue or change request (immediate feedback, before any
+ * agent runs) and removed once no job is active for it any more, so an
+ * answer followed by a fix keeps it the whole time.
+ */
 export class MaintenanceEventHandlers {
 	constructor(
 		private readonly forge: ForgeAccess,
+		private readonly jobs: MaintenanceJobRepository,
 		private readonly log: Logger,
 	) {}
 
 	async handle(event: DomainEvent): Promise<void> {
 		try {
+			// A follow-up job (fix after answer) continues a run that already
+			// carries the label.
+			if (event instanceof JobQueued && !event.isFollowUp) {
+				const session = await this.forge.session(RepoRef.parse(event.repoKey));
+				await session?.addLabel(event.number, Labels.inProgress);
+			}
+			if (isJobEnded(event)) {
+				const repo = RepoRef.parse(event.repoKey);
+				const stillActive = (await this.jobs.listActive(repo)).some(
+					(j) => j.number === event.number,
+				);
+				if (!stillActive) {
+					const session = await this.forge.session(repo);
+					await session?.removeLabel(event.number, Labels.inProgress);
+				}
+			}
 			if (isRepositoryWatched(event)) {
 				const session = await this.forge.session(RepoRef.parse(event.repoKey));
 				await session?.ensureLabels(LABEL_DEFINITIONS);

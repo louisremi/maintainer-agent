@@ -123,6 +123,8 @@ export interface FakeRepoState {
 	branches: Set<string>;
 	labels: Map<number, Set<string>>;
 	ensuredLabels: string[];
+	/** Every label change, in order: `+label#n` / `-label#n`. */
+	labelLog: string[];
 	openedChangeRequests: {
 		head: string;
 		base: string;
@@ -147,6 +149,7 @@ export function emptyRepoState(): FakeRepoState {
 		branches: new Set(["main"]),
 		labels: new Map(),
 		ensuredLabels: [],
+		labelLog: [],
 		openedChangeRequests: [],
 		reviews: [],
 	};
@@ -215,9 +218,11 @@ export class FakeForgeSession implements ForgeSession {
 			new Set(this.state.issues.get(n)?.labels ?? []);
 		s.add(label);
 		this.state.labels.set(n, s);
+		this.state.labelLog.push(`+${label}#${n}`);
 	}
 	async removeLabel(n: number, label: string) {
 		this.state.labels.get(n)?.delete(label);
+		this.state.labelLog.push(`-${label}#${n}`);
 	}
 	async branchExists(b: string) {
 		return this.state.branches.has(b);

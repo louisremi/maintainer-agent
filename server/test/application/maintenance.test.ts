@@ -89,7 +89,7 @@ describe("answering issues", () => {
 		// The fix agent gets the analysis of the answer job and no forge credential.
 		expect(h.workspaces.tasks[1]!.priorAnalysis).toBe("Analysis of the bug.");
 		expect(JSON.stringify(h.workspaces.tasks)).not.toContain("token");
-		expect(h.state.labels.get(7)?.has(Labels.inProgress)).toBe(false);
+		expect(h.state.labels.get(7)?.has(Labels.draftingPr)).toBe(false);
 	});
 
 	it("only suggests the agent-fix label for outsiders", async () => {
@@ -202,6 +202,93 @@ describe("answering issues", () => {
 		const [r] = await h.drain();
 		expect(r!.status).toBe("succeeded");
 		expect(h.agents.calls).toHaveLength(0);
+	});
+});
+
+describe("progress labels", () => {
+	const inProgress = (h: ReturnType<typeof maintenanceHarness>, n = 7) =>
+		h.state.labels.get(n)?.has(Labels.inProgress) ?? false;
+
+	it("marks an issue in progress as soon as it is queued, and clears it after the answer", async () => {
+		const h = maintenanceHarness();
+		h.addIssue(7, { role: "other", author: "zoe" });
+		h.verdict("question");
+		await h.send(
+			issueOpened({
+				authorRole: "other",
+				actor: { login: "zoe", isBot: false },
+			}),
+		);
+		// Before any job ran: the label is already there.
+		expect(inProgress(h)).toBe(true);
+		await h.drain();
+		expect(inProgress(h)).toBe(false);
+		expect(h.state.labelLog).toEqual([
+			`+${Labels.inProgress}#7`,
+			`-${Labels.inProgress}#7`,
+		]);
+	});
+
+	it("keeps it through answer and fix, and shows when a pull request is being drafted", async () => {
+		const h = maintenanceHarness();
+		h.addIssue(7);
+		h.verdict("bug");
+		h.change();
+		await h.send(issueOpened());
+		await h.drain();
+		expect(h.state.labelLog).toEqual([
+			`+${Labels.inProgress}#7`,
+			`+${Labels.draftingPr}#7`,
+			`-${Labels.draftingPr}#7`,
+			`-${Labels.inProgress}#7`,
+		]);
+		expect(h.state.openedChangeRequests).toHaveLength(1);
+	});
+
+	it("clears it when a job fails or escalates", async () => {
+		const h = maintenanceHarness();
+		h.addIssue(7);
+		h.verdict("question", "HOLD this");
+		await h.send(issueOpened());
+		await h.drain();
+		expect(inProgress(h)).toBe(false);
+		expect(h.state.labels.get(7)?.has(Labels.needsHuman)).toBe(true);
+	});
+
+	it("marks change requests under review", async () => {
+		const h = maintenanceHarness();
+		h.state.changeRequests.set(9, {
+			number: 9,
+			title: "T",
+			body: "",
+			authorLogin: "carol",
+			authorRole: "other",
+			isOpen: true,
+			isDraft: false,
+			baseBranch: "main",
+			baseSha: "b".repeat(40),
+			headSha: "h".repeat(40),
+			headFetchRef: "refs/pull/9/head",
+		});
+		await h.send({
+			type: "change-request-opened",
+			repo: REPO,
+			number: 9,
+			actor: { login: "carol", isBot: false },
+			labels: [],
+			authorRole: "other",
+			isDraft: false,
+		});
+		expect(inProgress(h, 9)).toBe(true);
+		await h.drain();
+		expect(inProgress(h, 9)).toBe(false);
+	});
+
+	it("does not add it for ignored events", async () => {
+		const h = maintenanceHarness();
+		h.addIssue(7);
+		await h.send(issueOpened({ labels: ["no-agent"] }));
+		expect(h.state.labelLog).toEqual([]);
 	});
 });
 

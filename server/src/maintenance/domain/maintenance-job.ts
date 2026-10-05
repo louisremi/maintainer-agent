@@ -33,40 +33,72 @@ export interface MaintenanceJobProps {
 	updatedAt: Date;
 }
 
-export class JobQueued {
-	readonly type = "maintenance.job-queued";
+/** Every job event names the job and what it is about. */
+abstract class JobEvent {
+	abstract readonly type: string;
 	constructor(
 		readonly jobId: string,
 		readonly kind: JobKind,
 		readonly repoKey: string,
+		readonly number: number,
 		readonly occurredAt: Date,
 	) {}
 }
-export class JobSucceeded {
+
+export class JobQueued extends JobEvent {
+	readonly type = "maintenance.job-queued";
+	constructor(
+		jobId: string,
+		kind: JobKind,
+		repoKey: string,
+		number: number,
+		occurredAt: Date,
+		/** Requested by another job of the same run (e.g. a fix after an answer). */
+		readonly isFollowUp: boolean,
+	) {
+		super(jobId, kind, repoKey, number, occurredAt);
+	}
+}
+export class JobSucceeded extends JobEvent {
 	readonly type = "maintenance.job-succeeded";
 	constructor(
-		readonly jobId: string,
+		job: MaintenanceJob,
 		readonly outcome: string,
-		readonly occurredAt: Date,
-	) {}
+		occurredAt: Date,
+	) {
+		super(job.id, job.kind, job.repo.key, job.number, occurredAt);
+	}
 }
-export class JobFailed {
+export class JobFailed extends JobEvent {
 	readonly type = "maintenance.job-failed";
 	constructor(
-		readonly jobId: string,
+		job: MaintenanceJob,
 		readonly reason: string,
-		readonly occurredAt: Date,
-	) {}
+		occurredAt: Date,
+	) {
+		super(job.id, job.kind, job.repo.key, job.number, occurredAt);
+	}
 }
-export class JobEscalated {
+export class JobEscalated extends JobEvent {
 	readonly type = "maintenance.job-escalated";
 	constructor(
-		readonly jobId: string,
-		readonly repoKey: string,
-		readonly number: number,
+		job: MaintenanceJob,
 		readonly reason: string,
-		readonly occurredAt: Date,
-	) {}
+		occurredAt: Date,
+	) {
+		super(job.id, job.kind, job.repo.key, job.number, occurredAt);
+	}
+}
+
+/** Any event marking the end of a job (it will not run again). */
+export type JobEnded = JobSucceeded | JobFailed | JobEscalated;
+
+export function isJobEnded(e: unknown): e is JobEnded {
+	return (
+		e instanceof JobSucceeded ||
+		e instanceof JobFailed ||
+		e instanceof JobEscalated
+	);
 }
 
 const TERMINAL: readonly JobStatus[] = ["succeeded", "failed", "needs-human"];
@@ -110,7 +142,16 @@ export class MaintenanceJob extends AggregateRoot {
 			createdAt: input.now,
 			updatedAt: input.now,
 		});
-		job.record(new JobQueued(job.id, job.kind, job.repo.key, input.now));
+		job.record(
+			new JobQueued(
+				job.id,
+				job.kind,
+				job.repo.key,
+				job.number,
+				input.now,
+				input.trigger.cause.startsWith("job:"),
+			),
+		);
 		return job;
 	}
 
@@ -137,7 +178,7 @@ export class MaintenanceJob extends AggregateRoot {
 			outcome,
 			updatedAt: now,
 		};
-		this.record(new JobSucceeded(this.id, outcome, now));
+		this.record(new JobSucceeded(this, outcome, now));
 	}
 
 	fail(reason: string, now: Date): void {
@@ -148,7 +189,7 @@ export class MaintenanceJob extends AggregateRoot {
 			outcome: reason,
 			updatedAt: now,
 		};
-		this.record(new JobFailed(this.id, reason, now));
+		this.record(new JobFailed(this, reason, now));
 	}
 
 	/** The agent could not produce something usable: a maintainer must decide. */
@@ -160,9 +201,7 @@ export class MaintenanceJob extends AggregateRoot {
 			outcome: reason,
 			updatedAt: now,
 		};
-		this.record(
-			new JobEscalated(this.id, this.repo.key, this.number, reason, now),
-		);
+		this.record(new JobEscalated(this, reason, now));
 	}
 
 	/**
