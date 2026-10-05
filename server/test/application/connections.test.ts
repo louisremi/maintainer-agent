@@ -386,10 +386,15 @@ describe("several apps watching repositories", () => {
 			enabled: false,
 		});
 		expect(await h.resolve.execute(gh("me/a"))).toBeNull();
+		const before = h.events.events.length;
 		await new SetRepositoryEnabled(h.deps).execute({
 			repoKey: gh("me/a").key,
 			enabled: true,
 		});
+		// Re-enabling announces the repository again (labels are set up).
+		expect(h.events.events.slice(before).map((e) => e.type)).toEqual([
+			"connections.repository-watched",
+		]);
 		expect(await h.resolve.execute(gh("me/a"))).not.toBeNull();
 
 		await new RemoveConnection(h.deps).execute({ connectionId: c });

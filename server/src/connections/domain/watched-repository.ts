@@ -103,8 +103,11 @@ export class WatchedRepository extends AggregateRoot {
 		this.record(new RepositoryUnwatched(this.repo.key, this.connectionId, now));
 	}
 
-	enable(): void {
+	/** Re-enabling is announced like a new watch, so per-repository setup (labels) runs again. */
+	enable(now: Date): void {
+		if (this.props.enabled) return;
 		this.props.enabled = true;
+		this.record(new RepositoryWatched(this.repo.key, this.connectionId, now));
 	}
 	disable(): void {
 		this.props.enabled = false;

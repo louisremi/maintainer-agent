@@ -337,17 +337,19 @@ export class SetRepositoryEnabled {
 	constructor(private readonly d: ConnectionsDeps) {}
 
 	async execute(input: { repoKey: string; enabled: boolean }): Promise<void> {
-		await this.d.uow.run(async () => {
-			const repo = await this.d.repositories.get(RepoRef.parse(input.repoKey));
-			if (!repo)
+		const repo = await this.d.uow.run(async () => {
+			const found = await this.d.repositories.get(RepoRef.parse(input.repoKey));
+			if (!found)
 				throw new ConnectionsError(
 					`not watched: ${input.repoKey}`,
 					"not-found",
 				);
-			if (input.enabled) repo.enable();
-			else repo.disable();
-			await this.d.repositories.save(repo);
+			if (input.enabled) found.enable(this.d.clock.now());
+			else found.disable();
+			await this.d.repositories.save(found);
+			return found;
 		});
+		await this.d.events.publish(repo.pullEvents());
 	}
 }
 
