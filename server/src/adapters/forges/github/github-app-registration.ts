@@ -108,6 +108,20 @@ export class GithubAppRegistrationGateway implements AppRegistrationGateway {
 		};
 	}
 
+	/**
+	 * The app's settings page ("Display information" holds the logo). GitHub
+	 * has no API to set an app's logo, so the operator uploads it there.
+	 */
+	appearanceUrl(connection: Connection): string | null {
+		const slug = connection.credentials?.appSlug;
+		if (!slug) return null;
+		const web = githubHost(connection.host).webUrl;
+		const owner = connection.ownerAccount;
+		return owner
+			? `${web}/organizations/${encodeURIComponent(owner)}/settings/apps/${slug}`
+			: `${web}/settings/apps/${slug}`;
+	}
+
 	installUrl(connection: Connection): string | null {
 		const slug = connection.credentials?.appSlug;
 		return slug

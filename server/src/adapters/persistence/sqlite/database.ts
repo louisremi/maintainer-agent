@@ -55,6 +55,8 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX jobs_actor ON jobs(trigger_actor, created_at);
   CREATE UNIQUE INDEX jobs_one_active ON jobs(repo_key, kind, number) WHERE status IN ('queued', 'running');
   `,
+	// 2: the operator confirmed the app's logo was set
+	`ALTER TABLE connections ADD COLUMN appearance_done INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 /** Opens (and migrates) the state database. The file is readable by its owner only. */

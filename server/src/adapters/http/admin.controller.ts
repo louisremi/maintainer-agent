@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import {
 	Body,
 	Controller,
@@ -20,6 +21,13 @@ import {
 } from "./admin-auth.guard";
 import { esc, page } from "./html";
 import { TOKENS } from "./tokens";
+
+/** Static files shipped with the server (see server/assets). */
+const ASSETS_DIR = resolve(__dirname, "../../../assets");
+const ADMIN_ASSETS = new Set([
+	"maintainer-agent-logo.png",
+	"maintainer-agent-logo-400.png",
+]);
 
 const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i;
 
@@ -46,6 +54,15 @@ export class AdminController {
         <h3>${esc(c.displayName)} <span class="muted">(${esc(c.platform)} · ${esc(c.host)}${c.ownerAccount ? ` · ${esc(c.ownerAccount)}` : ""})</span></h3>
         <p>Status: <b class="${c.status === "active" ? "ok" : "warn"}">${esc(c.status)}</b> · webhook <code>${esc(o.publicUrl)}/webhooks/${esc(c.id)}</code>
         ${c.installUrl ? ` · <a href="${esc(c.installUrl)}" rel="noreferrer">install on repositories</a>` : ""}</p>
+        ${
+					c.appearanceUrl
+						? `<div class="notice"><b>Give the app its avatar.</b> GitHub cannot set an app's logo automatically:
+          <a href="/admin/assets/maintainer-agent-logo.png" download>download the logo</a>, open the
+          <a href="${esc(c.appearanceUrl)}" rel="noreferrer" target="_blank">app's settings</a>, and under
+          "Display information" click <i>Upload a logo</i> → <i>Set new avatar</i> (badge background: <code>#ffffff</code>).
+          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/appearance-done"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Done</button></form></div>`
+						: ""
+				}
         <p>
           ${c.status === "active" ? `<form class="inline" method="post" action="/admin/connections/${esc(c.id)}/resync"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Resync repositories</button></form>` : ""}
           <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/${c.status === "disabled" ? "enable" : "disable"}"><input type="hidden" name="_csrf" value="${this.csrf}"><button>${c.status === "disabled" ? "Enable" : "Disable"}</button></form>
@@ -127,6 +144,14 @@ export class AdminController {
 		);
 	}
 
+	/** Files the admin page links to (the app logo). Fixed names only. */
+	@Get("assets/:name")
+	@UseGuards(AdminAuthGuard)
+	asset(@Param("name") name: string, @Res() res: Response): void {
+		if (!ADMIN_ASSETS.has(name)) throw new HttpException("not found", 404);
+		res.type("png").sendFile(join(ASSETS_DIR, name));
+	}
+
 	/** GitHub redirects here after creating the app. Protected by the one-time `state`, not by the admin password. */
 	@Get("github/callback")
 	async callback(
@@ -167,6 +192,9 @@ export class AdminController {
 				break;
 			case "disable":
 				await this.app.setConnectionEnabled(id, false);
+				break;
+			case "appearance-done":
+				await this.app.markAppearanceDone(id);
 				break;
 			case "remove":
 				await this.app.removeConnection(id);

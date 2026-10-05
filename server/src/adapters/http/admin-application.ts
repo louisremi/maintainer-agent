@@ -27,5 +27,6 @@ export interface AdminApplication {
 	): Promise<{ watched: string[]; contested: string[]; released: string[] }>;
 	setRepositoryEnabled(repoKey: string, enabled: boolean): Promise<void>;
 	setConnectionEnabled(connectionId: string, enabled: boolean): Promise<void>;
+	markAppearanceDone(connectionId: string): Promise<void>;
 	removeConnection(connectionId: string): Promise<void>;
 }

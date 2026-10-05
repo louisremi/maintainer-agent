@@ -353,6 +353,20 @@ export class SetRepositoryEnabled {
 	}
 }
 
+/** The operator set the app's logo on the forge: stop reminding them. */
+export class MarkAppearanceDone {
+	constructor(private readonly d: ConnectionsDeps) {}
+
+	async execute(input: { connectionId: string }): Promise<void> {
+		await this.d.uow.run(async () => {
+			const c = await this.d.connections.get(input.connectionId);
+			if (!c) throw new ConnectionsError("unknown connection", "not-found");
+			c.markAppearanceDone(this.d.clock.now());
+			await this.d.connections.save(c);
+		});
+	}
+}
+
 export class SetConnectionEnabled {
 	constructor(private readonly d: ConnectionsDeps) {}
 
@@ -434,6 +448,10 @@ export class ListConnections {
 			status: c.status,
 			isPublic: c.isPublic,
 			createdAt: c.createdAt.toISOString(),
+			appearanceUrl:
+				c.acceptsEvents && !c.appearanceDone
+					? this.d.gateways.for(c.platform).appearanceUrl(c)
+					: null,
 			installUrl: c.acceptsEvents
 				? this.d.gateways.for(c.platform).installUrl(c)
 				: null,

@@ -116,7 +116,10 @@ describe.each(implementations)("repository contracts: %s", (_, make) => {
 			now: later(1),
 		});
 		await connections.save(c);
+		c.markAppearanceDone(later(2));
+		await connections.save(c);
 		const back = (await connections.get("c1"))!;
+		expect(back.appearanceDone).toBe(true);
 		expect(back.status).toBe("active");
 		expect(back.credentials).toEqual(creds);
 		expect(back.isPublic).toBe(true);

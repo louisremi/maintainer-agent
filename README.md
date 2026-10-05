@@ -45,10 +45,11 @@ Ollama, LM Studio, a hosted API...) reachable from Docker containers.
    **Create the app on GitHub**. GitHub shows the preconfigured app (name,
    permissions, webhook URL); confirm it, and you land on its installation
    page.
-4. Optional: give the app its avatar. GitHub has no API for this: in the
-   app's settings, under "Display information", upload
-   [docs/assets/maintainer-agent-logo.png](docs/assets/maintainer-agent-logo.png)
-   (200×200) and pick a badge background colour (e.g. `#ffffff`).
+4. Optional: give the app its avatar. GitHub has no API for this, so
+   `/admin` shows a reminder next to each new app, with the logo to download
+   ([docs/assets/maintainer-agent-logo.png](docs/assets/maintainer-agent-logo.png),
+   200×200) and a link to the app's settings: upload it under "Display
+   information", then click **Done** on the reminder.
 5. Install the app on the repositories you want. That is all a repository
    needs; an optional [policy file](#repository-policy) tailors behaviour.
 

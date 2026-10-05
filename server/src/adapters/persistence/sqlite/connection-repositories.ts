@@ -23,6 +23,7 @@ interface ConnectionRow {
 	status: string;
 	registration_state: string | null;
 	credentials: string | null;
+	appearance_done: number;
 	created_at: string;
 	updated_at: string;
 }
@@ -58,12 +59,12 @@ export class SqliteConnectionRepository implements ConnectionRepository {
 		const s = c.snapshot();
 		this.db
 			.prepare(`
-      INSERT INTO connections (id, platform, host, kind, display_name, owner_account, is_public, status, registration_state, credentials, created_at, updated_at)
-      VALUES (@id, @platform, @host, @kind, @display_name, @owner_account, @is_public, @status, @registration_state, @credentials, @created_at, @updated_at)
+      INSERT INTO connections (id, platform, host, kind, display_name, owner_account, is_public, status, registration_state, credentials, appearance_done, created_at, updated_at)
+      VALUES (@id, @platform, @host, @kind, @display_name, @owner_account, @is_public, @status, @registration_state, @credentials, @appearance_done, @created_at, @updated_at)
       ON CONFLICT(id) DO UPDATE SET
         platform = excluded.platform, host = excluded.host, kind = excluded.kind, display_name = excluded.display_name,
         owner_account = excluded.owner_account, is_public = excluded.is_public, status = excluded.status,
-        registration_state = excluded.registration_state, credentials = excluded.credentials, updated_at = excluded.updated_at
+        registration_state = excluded.registration_state, credentials = excluded.credentials, appearance_done = excluded.appearance_done, updated_at = excluded.updated_at
     `)
 			.run({
 				id: s.id,
@@ -78,6 +79,7 @@ export class SqliteConnectionRepository implements ConnectionRepository {
 				credentials: s.credentials
 					? this.cipher.encrypt(JSON.stringify(s.credentials))
 					: null,
+				appearance_done: s.appearanceDone ? 1 : 0,
 				created_at: s.createdAt.toISOString(),
 				updated_at: s.updatedAt.toISOString(),
 			});
@@ -105,6 +107,7 @@ export class SqliteConnectionRepository implements ConnectionRepository {
 						this.cipher.decrypt(r.credentials),
 					) as ConnectionCredentials)
 				: null,
+			appearanceDone: r.appearance_done === 1,
 			createdAt: new Date(r.created_at),
 			updatedAt: new Date(r.updated_at),
 		};

@@ -54,6 +54,7 @@ import {
 	ConnectionsError,
 	GetConnectionAccess,
 	ListConnections,
+	MarkAppearanceDone,
 	PruneExpiredRegistrations,
 	RegisterConfiguredConnection,
 	RemoveConnection,
@@ -344,6 +345,8 @@ export function buildApp(config: ServerConfig, o: Overrides = {}): App {
 				connectionId,
 				enabled,
 			}),
+		markAppearanceDone: (connectionId) =>
+			new MarkAppearanceDone(connectionsDeps).execute({ connectionId }),
 		removeConnection: (connectionId) =>
 			new RemoveConnection(connectionsDeps).execute({ connectionId }),
 	};

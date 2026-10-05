@@ -351,4 +351,37 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 			.set("authorization", basic(ADMIN))
 			.expect(200);
 	});
+
+	it("reminds the operator to set the app logo until they confirm it", async () => {
+		const admin = () =>
+			request(http.getHttpServer())
+				.get("/admin")
+				.set("authorization", basic(ADMIN));
+		const before = await admin().expect(200);
+		expect(before.text).toContain("Give the app its avatar");
+		expect(before.text).toContain(
+			'href="https://github.com/settings/apps/ma-env"',
+		);
+		const logo = await request(http.getHttpServer())
+			.get("/admin/assets/maintainer-agent-logo.png")
+			.set("authorization", basic(ADMIN))
+			.expect(200);
+		expect(logo.headers["content-type"]).toMatch(/image\/png/);
+		await request(http.getHttpServer())
+			.get("/admin/assets/maintainer-agent-logo.png")
+			.expect(401);
+		await request(http.getHttpServer())
+			.get("/admin/assets/..%2Fpackage.json")
+			.set("authorization", basic(ADMIN))
+			.expect(404);
+		const csrf = /name="_csrf" value="([^"]+)"/.exec(before.text)?.[1] ?? "";
+		await request(http.getHttpServer())
+			.post("/admin/connections/env/appearance-done")
+			.set("authorization", basic(ADMIN))
+			.type("form")
+			.send({ _csrf: csrf })
+			.expect(303);
+		const after = await admin().expect(200);
+		expect(after.text).not.toContain("Give the app its avatar");
+	});
 });

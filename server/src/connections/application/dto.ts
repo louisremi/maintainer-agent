@@ -16,6 +16,8 @@ export interface ConnectionSummary {
 	readonly isPublic: boolean;
 	readonly createdAt: string;
 	readonly installUrl: string | null;
+	/** Settings page to upload the logo, while the operator has not done it. */
+	readonly appearanceUrl: string | null;
 	readonly repositories: readonly WatchedRepositorySummary[];
 }
 

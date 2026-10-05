@@ -45,6 +45,8 @@ export interface AppRegistrationGateway {
 		code: string,
 	): Promise<CompletedRegistration>;
 	installUrl(connection: Connection): string | null;
+	/** Where the operator customises the app (logo...) on the forge, if anywhere. */
+	appearanceUrl(connection: Connection): string | null;
 }
 
 export interface AppRegistrationGateways {

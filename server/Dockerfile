@@ -25,6 +25,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY assets ./assets
 COPY package.json ./
 ARG AGENT_VERSION=dev
 ENV NODE_ENV=production \

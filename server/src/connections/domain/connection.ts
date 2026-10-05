@@ -33,6 +33,8 @@ export interface ConnectionProps {
 	status: ConnectionStatus;
 	registrationState: string | null;
 	credentials: ConnectionCredentials | null;
+	/** The operator confirmed the app's look (logo) was customised on the forge. */
+	appearanceDone: boolean;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -86,6 +88,7 @@ export class Connection extends AggregateRoot {
 			status: "pending",
 			registrationState: input.registrationState,
 			credentials: null,
+			appearanceDone: false,
 			createdAt: input.now,
 			updatedAt: input.now,
 		});
@@ -113,6 +116,7 @@ export class Connection extends AggregateRoot {
 			status: "active",
 			registrationState: null,
 			credentials: input.credentials,
+			appearanceDone: false,
 			createdAt: input.now,
 			updatedAt: input.now,
 		});
@@ -158,6 +162,13 @@ export class Connection extends AggregateRoot {
 		if (this.props.status === "pending")
 			throw new DomainError("a pending connection has no credentials yet");
 		this.props = { ...this.props, credentials, updatedAt: now };
+	}
+
+	/** The operator set the app's logo on the forge (no API can do it). */
+	markAppearanceDone(now: Date): void {
+		if (this.props.status === "pending")
+			throw new DomainError("a pending connection has no app to customise");
+		this.props = { ...this.props, appearanceDone: true, updatedAt: now };
 	}
 
 	disable(now: Date): void {
@@ -217,6 +228,9 @@ export class Connection extends AggregateRoot {
 	}
 	get credentials(): ConnectionCredentials | null {
 		return this.props.credentials;
+	}
+	get appearanceDone(): boolean {
+		return this.props.appearanceDone;
 	}
 	get createdAt(): Date {
 		return this.props.createdAt;

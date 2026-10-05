@@ -18,7 +18,8 @@ export function page(title: string, body: string): string {
   h1, h2 { line-height: 1.2 } h2 { margin-top: 2rem; border-bottom: 1px solid #d0d7de; padding-bottom: .3rem }
   table { border-collapse: collapse; width: 100%; margin: .5rem 0 1rem } th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid #eaeef2; vertical-align: top }
   code { background: #f6f8fa; padding: .1rem .3rem; border-radius: 4px } .muted { color: #59636e } .warn { color: #9a6700 } .bad { color: #cf222e } .ok { color: #1a7f37 }
-  form.inline { display: inline } button { cursor: pointer } fieldset { border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem }
+  form.inline { display: inline }
+  .notice { background: #fff8c5; border: 1px solid #d4a72c; border-radius: 6px; padding: .6rem .8rem; margin: .5rem 0 1rem } button { cursor: pointer } fieldset { border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem }
   label { display: block; margin: .4rem 0 }
 </style></head><body>${body}</body></html>`;
 }

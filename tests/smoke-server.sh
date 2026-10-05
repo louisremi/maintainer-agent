@@ -19,4 +19,5 @@ done
 [[ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/admin")" == 401 ]] || fail "/admin must need the token"
 [[ "$(curl -s -o /dev/null -w '%{http_code}' -u op:smoke-test-admin-token "http://127.0.0.1:${port}/admin")" == 200 ]] || fail "/admin with the token"
 [[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${port}/webhooks/unknown")" == 404 ]] || fail "unknown webhook"
+[[ "$(curl -s -o /dev/null -w '%{http_code} %{content_type}' -u op:smoke-test-admin-token "http://127.0.0.1:${port}/admin/assets/maintainer-agent-logo.png")" == "200 image/png" ]] || fail "logo asset"
 echo "server smoke test passed: ${img}"

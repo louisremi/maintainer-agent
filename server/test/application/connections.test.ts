@@ -60,6 +60,8 @@ function harness() {
 				installUrl: `https://github.com/apps/slug-${c.id}/installations/new`,
 			};
 		},
+		appearanceUrl: (c: Connection) =>
+			`https://github.com/settings/apps/${c.credentials?.appSlug}`,
 		installUrl: (c: Connection) =>
 			`https://github.com/apps/${c.credentials?.appSlug}/installations/new`,
 	};

@@ -142,4 +142,22 @@ describe("ClaimPolicy and WatchedRepository", () => {
 		w.dropContest("c2");
 		expect(w.contestedBy).toEqual([]);
 	});
+
+	it("records that the app's logo was set, but not for a pending registration", () => {
+		const p = pending();
+		expect(() => p.markAppearanceDone(T0)).toThrow(DomainError);
+		const c = Connection.registerDirectly({
+			id: "env",
+			platform: "github",
+			host: "github.com",
+			kind: "github-app",
+			displayName: "env",
+			ownerAccount: null,
+			credentials: creds,
+			now: T0,
+		});
+		expect(c.appearanceDone).toBe(false);
+		c.markAppearanceDone(T0);
+		expect(c.appearanceDone).toBe(true);
+	});
 });
