@@ -10,8 +10,7 @@ cid=""
 fail() { echo "smoke: $*" >&2; [[ -n "${cid}" ]] && docker logs "${cid}" >&2; exit 1; }
 cfg="$(mktemp -d)"
 trap '[[ -n "${cid}" ]] && docker rm -f "${cid}" >/dev/null 2>&1; rm -rf "${cfg}"' EXIT
-sed 's/^  max_concurrent_jobs: 1 /  docker_pull: never
-  max_concurrent_jobs: 1 /' "${here}/../docs/settings.example.yml" > "${cfg}/settings.yml"
+awk '{ print } /^server:$/ { print "  docker_pull: never" }' "${here}/../docs/settings.example.yml" > "${cfg}/settings.yml"
 printf 'MA_ADMIN_TOKEN: smoke-test-admin-token\n' > "${cfg}/secrets.yaml"
 chmod -R a+rwX "${cfg}"
 
