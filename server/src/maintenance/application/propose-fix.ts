@@ -5,7 +5,6 @@ import type {
 	AgentRunner,
 	ChangePublisher,
 	IssueSnapshot,
-	ModelCatalog,
 	OutputSanitizer,
 	WorkspacePreparer,
 } from "./ports";
@@ -16,7 +15,6 @@ export interface ProposeFixDeps {
 	readonly agents: AgentRunner;
 	readonly publisher: ChangePublisher;
 	readonly sanitizer: OutputSanitizer;
-	readonly models: ModelCatalog;
 	readonly log: Logger;
 }
 
@@ -93,7 +91,7 @@ export class ProposeFix implements JobHandler {
 				}),
 			);
 			const run = await this.d.agents.proposeFix(ws, {
-				model: this.d.models.modelFor(job.kind),
+				model: ctx.models[job.kind],
 				stepLimit: policy.fix.stepLimit,
 				extraEgress: policy.egress,
 			});

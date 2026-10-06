@@ -1,6 +1,10 @@
+import { resolve } from "node:path";
 import { Controller, Get, HttpException, Inject, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { page } from "./html";
+
+const SCHEMA_FILE = resolve(__dirname, "../../../assets/settings.schema.json");
+
 import { TOKENS } from "./tokens";
 import type { HealthProbe } from "./webhook-ingress";
 
@@ -32,6 +36,12 @@ export class HealthController {
       <p class="muted">Labels are created on each repository; new issues and pull requests are handled from now on.</p>`,
 			),
 		);
+	}
+
+	/** JSON Schema of settings.yml (for editors: `# yaml-language-server: $schema=…`). */
+	@Get("settings/schema.json")
+	schema(@Res() res: Response): void {
+		res.type("json").sendFile(SCHEMA_FILE);
 	}
 
 	@Get()

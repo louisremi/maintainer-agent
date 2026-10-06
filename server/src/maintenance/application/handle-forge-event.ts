@@ -58,6 +58,10 @@ export class HandleForgeEvent {
 
 		if (!this.d.allowList.allows(event.repo))
 			return ignored("account not allowed on this server");
+		// Only repositories listed in settings.yml are acted on (checked before
+		// any forge API call).
+		if (!this.d.policies.isConfigured(event.repo))
+			return ignored("repository not configured in settings.yml (or paused)");
 		const session = await this.d.forge.session(event.repo, input.connectionId);
 		if (!session)
 			return ignored(
@@ -66,7 +70,12 @@ export class HandleForgeEvent {
 
 		const branch = await session.getDefaultBranch();
 		const lookup = await this.d.policies.load(session, branch.name);
-		if (!lookup.ok) return ignored(`invalid policy in ${lookup.source}`);
+		if (!lookup.ok)
+			return ignored(
+				lookup.source
+					? `invalid policy in ${lookup.source}`
+					: "repository not configured in settings.yml (or paused)",
+			);
 
 		const now = this.d.clock.now();
 		let actorRole: Role | null = null;

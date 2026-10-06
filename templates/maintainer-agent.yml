@@ -1,6 +1,10 @@
 # .maintainer-agent.yml (or .github/maintainer-agent.yml): how maintainer-agent
 # behaves in this repository. Everything is optional, and so is the file:
-# installing the app is enough. The file is read from the default branch and
+# installing the app is enough. The server operator's settings.yml decides
+# what is allowed; this file can only narrow it (switch features off, lower
+# limits, require the agent-fix label, add checks, links and protected paths;
+# add egress hosts if the operator allows it). Keys you leave out keep the
+# operator's values. The file is read from the default branch and
 # validated strictly (unknown keys are errors). It is protected: the agent
 # never modifies it.
 version: 2

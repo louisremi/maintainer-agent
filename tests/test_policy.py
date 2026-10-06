@@ -33,7 +33,8 @@ check("defaults: automatic fixes for maintainers", p["fix"]["trigger"] == "maint
 check("defaults: reviews on", p["review"]["enabled"])
 check("defaults: no egress or links", p["egress"] == [] and p["links"] == [])
 check("output has exactly the keys the server expects",
-      sorted(p) == ["answer", "checks", "egress", "fix", "instructions", "links", "playbooks", "protected_paths", "review"])
+      sorted(p) == ["answer", "checks", "egress", "fix", "instructions", "links", "playbooks", "protected_paths", "review", "set_keys"])
+check("an empty file sets nothing (everything inherits from the server)", p["set_keys"] == [])
 
 full = open(os.path.join(HERE, "..", "templates", "maintainer-agent.yml")).read()
 rc, p, err = run(full)
@@ -104,6 +105,9 @@ check("v1 policy still accepted", rc == 0)
 check("v1 triage maps to answer", p and p["answer"] == {"enabled": False, "max_attempts": 3})
 check("v1 triage playbook maps to issue", p and p["playbooks"]["issue"] == "docs/agent/triage.md")
 check("v1 ci-fix playbook ignored", p and "ci-fix" not in p["playbooks"])
+check("v1 set keys use the new names", p and "answer.enabled" in p["set_keys"] and "playbooks.issue" in p["set_keys"] and not any("ci-fix" in k or "max_age_days" in k for k in p["set_keys"]))
+rc, p, _ = run("fix:\n  step_limit: 40\negress: [pypi.org]\n")
+check("set keys name exactly what the file wrote", p and p["set_keys"] == ["egress", "fix.step_limit"])
 
 bad = {
     "unknown top-level key": "egres: [a.com]\n",

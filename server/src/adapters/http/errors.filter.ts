@@ -28,6 +28,11 @@ export class ErrorsFilter implements ExceptionFilter {
 			res.status(status).json({ message: e.message });
 			return;
 		}
+		if (e?.name === "SafeModeError") {
+			// GitHub redelivers on 5xx once the settings are fixed.
+			res.status(503).json({ message: e.message });
+			return;
+		}
 		if (e?.name === "DomainError") {
 			res.status(400).json({ message: e.message });
 			return;

@@ -3,7 +3,11 @@ import type {
 	PolicyValidation,
 	PolicyValidator,
 } from "../../../maintenance/application";
-import type { PolicyData } from "../../../maintenance/domain";
+import {
+	DEFAULT_POLICY,
+	type PolicyData,
+	type RepositoryFilePolicy,
+} from "../../../maintenance/domain";
 import type { DockerSandbox } from "./sandbox";
 
 const PolicySchema = z.object({
@@ -30,10 +34,15 @@ const PolicySchema = z.object({
 		max_diff_lines: z.number().int(),
 		max_attempts: z.number().int(),
 	}),
+	set_keys: z.array(z.string()).default([]),
 });
 
-export function toPolicyData(json: unknown): PolicyData {
+export function toFilePolicy(json: unknown): RepositoryFilePolicy {
 	const p = PolicySchema.parse(json);
+	return { data: toPolicyData(p), setKeys: p.set_keys };
+}
+
+function toPolicyData(p: z.output<typeof PolicySchema>): PolicyData {
 	return {
 		instructions: p.instructions,
 		playbooks: p.playbooks,
@@ -41,7 +50,12 @@ export function toPolicyData(json: unknown): PolicyData {
 		egress: p.egress,
 		links: p.links,
 		protectedPaths: p.protected_paths,
-		answer: { enabled: p.answer.enabled, maxAttempts: p.answer.max_attempts },
+		// Step limits for answers and reviews are server settings only.
+		answer: {
+			enabled: p.answer.enabled,
+			maxAttempts: p.answer.max_attempts,
+			stepLimit: DEFAULT_POLICY.answer.stepLimit,
+		},
 		fix: {
 			enabled: p.fix.enabled,
 			trigger: p.fix.trigger,
@@ -53,6 +67,7 @@ export function toPolicyData(json: unknown): PolicyData {
 			maxComments: p.review.max_comments,
 			maxDiffLines: p.review.max_diff_lines,
 			maxAttempts: p.review.max_attempts,
+			stepLimit: DEFAULT_POLICY.review.stepLimit,
 		},
 	};
 }
@@ -95,7 +110,7 @@ export class DockerPolicyValidator implements PolicyValidator {
 				`policy validator failed (exit ${r.exitCode}): ${r.stderr.slice(0, 300)}`,
 			);
 		try {
-			return { ok: true, data: toPolicyData(JSON.parse(r.stdout)) };
+			return { ok: true, policy: toFilePolicy(JSON.parse(r.stdout)) };
 		} catch (err) {
 			throw new Error(
 				`policy validator returned unexpected output: ${err instanceof Error ? err.message : String(err)}`,

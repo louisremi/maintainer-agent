@@ -1,5 +1,5 @@
 import type { JobKind, MaintenanceJob, RepositoryPolicy } from "../domain";
-import type { ForgeSession } from "./ports";
+import type { ForgeSession, ModelChoice } from "./ports";
 
 export type JobResult =
 	| {
@@ -26,6 +26,8 @@ export interface JobRunContext {
 	readonly job: MaintenanceJob;
 	readonly session: ForgeSession;
 	readonly policy: RepositoryPolicy;
+	/** The model endpoint for each kind of job in this repository. */
+	readonly models: Readonly<Record<JobKind, ModelChoice>>;
 	readonly defaultBranch: { readonly name: string; readonly sha: string };
 	/** True on the last attempt the policy allows: handlers report instead of retrying. */
 	readonly isLastAttempt: boolean;

@@ -20,8 +20,8 @@ export async function createHttpServer(app: App): Promise<INestApplication> {
 	nest.useBodyParser("urlencoded", { extended: false, limit: "64kb" });
 	nest.useGlobalFilters(new ErrorsFilter(app.log));
 	nest.disable("x-powered-by");
-	if (app.config.PUBLIC_PATHS_ONLY_VIA_HOST) {
-		nest.use(publicHostFilter(app.config.PUBLIC_PATHS_ONLY_VIA_HOST));
+	if (app.publicPathsOnlyViaHost) {
+		nest.use(publicHostFilter(app.publicPathsOnlyViaHost));
 	}
 	nest.enableShutdownHooks();
 	return nest;

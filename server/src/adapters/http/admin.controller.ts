@@ -13,7 +13,8 @@ import {
 	UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import type { AdminApplication } from "./admin-application";
+import { formatIssue, type SettingsIssue } from "../../settings/domain";
+import type { AdminApplication, SettingsAdminPort } from "./admin-application";
 import {
 	type AdminAuth,
 	AdminAuthGuard,
@@ -31,13 +32,14 @@ const ADMIN_ASSETS = new Set([
 
 const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i;
 
-/** Operator pages: connections (GitHub Apps), their repositories, recent jobs. */
+/** Operator pages: settings overview and editor, connections (GitHub Apps), recent jobs. */
 @Controller("admin")
 export class AdminController {
 	private readonly csrf: string;
 
 	constructor(
 		@Inject(TOKENS.admin) private readonly app: AdminApplication,
+		@Inject(TOKENS.settingsAdmin) private readonly settings: SettingsAdminPort,
 		@Inject(TOKENS.adminAuth) auth: AdminAuth,
 	) {
 		this.csrf = adminFormToken(auth.token);
@@ -46,12 +48,28 @@ export class AdminController {
 	@Get()
 	@UseGuards(AdminAuthGuard)
 	async index(@Res() res: Response): Promise<void> {
+		const settings = this.settings;
+		if (settings.mode === "safe") {
+			res
+				.type("html")
+				.send(
+					page(
+						"Safe mode",
+						`<h1>maintainer-agent</h1>${this.safeModeBanner()}`,
+					),
+				);
+			return;
+		}
 		const o = await this.app.overview();
+		const restart = this.restartNote();
+		const unconfigured = o.connections.flatMap((c) =>
+			c.repositories.filter((r) => !r.configured),
+		);
 		const connections = o.connections.length
 			? o.connections
 					.map(
 						(c) => `
-        <h3>${esc(c.displayName)} <span class="muted">(${esc(c.platform)} · ${esc(c.host)}${c.ownerAccount ? ` · ${esc(c.ownerAccount)}` : ""})</span></h3>
+        <h3>${esc(c.displayName)} <span class="muted">(${esc(c.platform)} · ${esc(c.host)}${c.ownerAccount ? ` · ${esc(c.ownerAccount)}` : ""} · <code>connections.${esc(c.id)}</code>)</span></h3>
         <p>Status: <b class="${c.status === "active" ? "ok" : "warn"}">${esc(c.status)}</b> · webhook <code>${esc(o.publicUrl)}/webhooks/${esc(c.id)}</code>
         ${c.installUrl ? ` · <a href="${esc(c.installUrl)}" rel="noreferrer">install on repositories</a>` : ""}</p>
         ${
@@ -60,29 +78,35 @@ export class AdminController {
           <a href="/admin/assets/maintainer-agent-logo.png" download>download the logo</a>, open the
           <a href="${esc(c.appearanceUrl)}" rel="noreferrer" target="_blank">app's settings</a>, and under
           "Display information" click <i>Upload a logo</i> → <i>Set new avatar</i> (badge background: <code>#ffffff</code>).
-          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/appearance-done"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Done</button></form></div>`
+          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/appearance-done"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Done</button></form>
+          <span class="muted">(saved to settings.yml; the server restarts)</span></div>`
 						: ""
 				}
-        <p>
-          ${c.status === "active" ? `<form class="inline" method="post" action="/admin/connections/${esc(c.id)}/resync"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Resync repositories</button></form>` : ""}
-          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/${c.status === "disabled" ? "enable" : "disable"}"><input type="hidden" name="_csrf" value="${this.csrf}"><button>${c.status === "disabled" ? "Enable" : "Disable"}</button></form>
-          <form class="inline" method="post" action="/admin/connections/${esc(c.id)}/remove" onsubmit="return confirm('Forget this connection? The GitHub App itself is not deleted.')"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Remove</button></form>
-        </p>
+        ${c.status === "active" ? `<p><form class="inline" method="post" action="/admin/connections/${esc(c.id)}/resync"><input type="hidden" name="_csrf" value="${this.csrf}"><button>Resync repositories</button></form></p>` : ""}
         ${
 					c.repositories.length
-						? `<table><tr><th>Repository</th><th>State</th><th></th></tr>${c.repositories
+						? `<table><tr><th>Repository the app reaches</th><th>In settings.yml</th></tr>${c.repositories
 								.map(
 									(r) => `
           <tr><td>${esc(r.path)}</td>
-          <td>${r.enabled ? '<span class="ok">enabled</span>' : '<span class="muted">disabled</span>'}${r.contestedBy.length ? ` <span class="warn">also reachable via ${esc(r.contestedBy.join(", "))} (ignored there)</span>` : ""}</td>
-          <td><form class="inline" method="post" action="/admin/repositories/${r.enabled ? "disable" : "enable"}"><input type="hidden" name="_csrf" value="${this.csrf}"><input type="hidden" name="repo" value="${esc(r.key)}"><button>${r.enabled ? "Disable" : "Enable"}</button></form></td></tr>`,
+          <td>${r.configured ? (r.enabled ? '<span class="ok">configured</span>' : '<span class="muted">configured, paused</span>') : '<span class="warn">not configured (ignored)</span>'}${r.contestedBy.length ? ` <span class="muted">also reachable via ${esc(r.contestedBy.join(", "))}</span>` : ""}</td></tr>`,
 								)
 								.join("")}</table>`
-						: '<p class="muted">No repositories yet. Install the app on some, then resync.</p>'
+						: '<p class="muted">The app reaches no repository yet. Install it on some, then resync.</p>'
 				}`,
 					)
 					.join("")
 			: '<p class="muted">No connection yet. Add a GitHub App below.</p>';
+		const snippet = unconfigured.length
+			? `<p>The apps reach these repositories, but settings.yml does not list them, so they are ignored. To act on them, add them under <code>repositories:</code> in the <a href="/admin/settings">settings</a>:</p>
+        <pre>repositories:\n${unconfigured.map((r) => `  ${esc(r.settingsKey)}: {}`).join("\n")}</pre>`
+			: "";
+		const missing = o.configuredRepositories.filter(
+			(r) =>
+				!o.connections.some((c) =>
+					c.repositories.some((x) => x.settingsKey === r.key),
+				),
+		);
 		const jobs = o.jobs.length
 			? `<table><tr><th>When</th><th>Repository</th><th>Job</th><th>Status</th><th>Outcome</th></tr>${o.jobs
 					.map(
@@ -97,21 +121,134 @@ export class AdminController {
 				"Admin",
 				`
       <h1>maintainer-agent</h1>
-      <p>Model endpoint: ${o.modelAvailable ? '<b class="ok">reachable</b>' : '<b class="bad">unreachable</b> (jobs wait until it is back)'}
-      · credentials at rest: ${o.secretsEncrypted ? '<span class="ok">encrypted</span>' : '<span class="warn">not encrypted (set SECRETS_KEY)</span>'}</p>
+      ${restart}
+      <p>Settings: <code>${esc(settings.path)}</code> · <a href="/admin/settings">edit settings</a>
+      · model endpoints: ${o.modelAvailable ? '<b class="ok">reachable</b>' : '<b class="bad">unreachable</b> (jobs wait until they are back)'}</p>
+      <h2>Repositories</h2>
+      ${
+				o.configuredRepositories.length
+					? `<table><tr><th>settings.yml</th><th>State</th></tr>${o.configuredRepositories
+							.map(
+								(r) =>
+									`<tr><td><code>${esc(r.key)}</code></td><td>${r.enabled ? '<span class="ok">active</span>' : '<span class="muted">paused (enabled: false)</span>'}${missing.includes(r) ? ' <span class="warn">no app reaches it yet: install an app on it</span>' : ""}</td></tr>`,
+							)
+							.join("")}</table>`
+					: '<p class="muted">No repository configured yet: add some under <code>repositories:</code> in the <a href="/admin/settings">settings</a>.</p>'
+			}
+      ${snippet}
+      <h2>Models</h2>
+      <table><tr><th>Name</th><th>Endpoint</th><th>Model</th></tr>${o.models.map((m) => `<tr><td><code>${esc(m.name)}</code></td><td>${esc(m.apiBase)}</td><td>${esc(m.model)}</td></tr>`).join("")}</table>
       <h2>Connections</h2>${connections}
       <h2>Add a GitHub App</h2>
       <form method="post" action="/admin/github/register"><input type="hidden" name="_csrf" value="${this.csrf}"><fieldset>
         <label>GitHub host <input name="host" value="github.com" required pattern="[A-Za-z0-9.:-]+"> <span class="muted">github.com, or your GitHub Enterprise Server host</span></label>
         <label>Organization <input name="org" placeholder="leave empty for your personal account" pattern="[A-Za-z0-9-]*"></label>
-        <label><input type="checkbox" name="public" value="1"> Public app (installable by other accounts; restrict them with ALLOWED_ACCOUNTS)</label>
+        <label><input type="checkbox" name="public" value="1"> Public app (installable by other accounts; needs <code>server.allowed_accounts</code>)</label>
         <p class="muted">GitHub creates the app with the right permissions and webhook URL; you only confirm its name.
+        The app is then added to settings.yml (its keys to secrets.yaml) and the server restarts.
         A private app can only be installed on the account that owns it: add one app per account.</p>
         <button>Create the app on GitHub</button>
       </fieldset></form>
       <h2>Recent jobs</h2>${jobs}`,
 			),
 		);
+	}
+
+	/** The raw settings.yml editor: validate, or save and restart. */
+	@Get("settings")
+	@UseGuards(AdminAuthGuard)
+	async settingsPage(@Res() res: Response): Promise<void> {
+		const text = await this.settings.text();
+		res
+			.type("html")
+			.send(
+				this.editorPage(
+					text,
+					this.settings.mode === "safe" ? this.settings.issues : [],
+					null,
+				),
+			);
+	}
+
+	@Post("settings")
+	@HttpCode(200)
+	@UseGuards(AdminAuthGuard)
+	async saveSettings(
+		@Body() body: Record<string, string>,
+		@Res() res: Response,
+	): Promise<void> {
+		const text = String(body.text ?? "").replace(/\r\n/g, "\n");
+		if (body.action === "validate") {
+			const r = this.settings.validate(text);
+			res
+				.type("html")
+				.send(
+					this.editorPage(
+						text,
+						r.ok ? [] : r.issues,
+						r.ok ? "The settings are valid. Nothing was saved." : null,
+					),
+				);
+			return;
+		}
+		const r = await this.settings.save(text);
+		if (!r.ok) {
+			res
+				.status(400)
+				.type("html")
+				.send(this.editorPage(text, r.issues, null));
+			return;
+		}
+		res.type("html").send(this.restartingPage("Settings saved."));
+	}
+
+	private editorPage(
+		text: string,
+		issues: readonly SettingsIssue[],
+		ok: string | null,
+	): string {
+		const sources = this.settings.secretSources();
+		return page(
+			"Settings",
+			`<p><a href="/admin">← admin</a></p>
+      <h1>Settings</h1>
+      <p><code>${esc(this.settings.path)}</code> · reference: <a href="https://github.com/louisremi/maintainer-agent/blob/main/docs/settings.md" rel="noreferrer" target="_blank">docs/settings.md</a>
+      · schema: <a href="/settings/schema.json">schema.json</a></p>
+      <p class="muted">Saving validates the file, keeps a backup in <code>backups/</code>, then restarts the server to apply it.
+      Secrets are written as <code>{MA_NAME}</code> placeholders; their values live in <code>secrets.yaml</code>, Docker secrets or the environment and are never shown here.</p>
+      ${ok ? `<p class="ok"><b>${esc(ok)}</b></p>` : ""}
+      ${issues.length ? `<div class="notice"><b>${issues.length} problem${issues.length > 1 ? "s" : ""}:</b><ul>${issues.map((i) => `<li><code>${esc(formatIssue(i))}</code></li>`).join("")}</ul></div>` : ""}
+      <form method="post" action="/admin/settings"><input type="hidden" name="_csrf" value="${this.csrf}">
+        <textarea name="text" rows="40" spellcheck="false" style="width:100%;font:13px/1.45 ui-monospace,monospace;tab-size:2">${esc(text)}</textarea>
+        <p><button name="action" value="validate">Validate</button>
+        <button name="action" value="save" onclick="return confirm('Save and restart the server? Running jobs are interrupted and resume after the restart.')">Save and restart</button></p>
+      </form>
+      ${sources.length ? `<h2>Secrets in use</h2><table><tr><th>Name</th><th>From</th></tr>${sources.map((s) => `<tr><td><code>${esc(s.name)}</code></td><td>${esc(s.source)}</td></tr>`).join("")}</table>` : ""}`,
+		);
+	}
+
+	private restartingPage(what: string): string {
+		return page(
+			"Restarting",
+			`<h1>${esc(what)} Restarting…</h1><p class="muted">The page reloads when the server is back.</p>
+      <script>
+        const back = () => fetch('/healthz', {cache: 'no-store'}).then(r => r.ok ? location.assign('/admin') : setTimeout(back, 1000), () => setTimeout(back, 1000));
+        setTimeout(back, 2500);
+      </script>`,
+		);
+	}
+
+	private safeModeBanner(): string {
+		const issues = this.settings.issues;
+		return `<div class="notice"><b>Safe mode: settings.yml is invalid.</b> No events or jobs are processed (GitHub redelivers webhooks later).
+      Fix the file on the <a href="/admin/settings">settings page</a> or on disk, then restart.
+      <ul>${issues.map((i) => `<li><code>${esc(formatIssue(i))}</code></li>`).join("")}</ul></div>`;
+	}
+
+	private restartNote(): string {
+		return this.settings.migratedFrom !== null
+			? `<div class="notice">settings.yml was migrated from schema version ${this.settings.migratedFrom} at start-up; a backup is in <code>backups/</code>.</div>`
+			: "";
 	}
 
 	@Post("github/register")
@@ -187,37 +324,13 @@ export class AdminController {
 			case "resync":
 				await this.app.resync(id);
 				break;
-			case "enable":
-				await this.app.setConnectionEnabled(id, true);
-				break;
-			case "disable":
-				await this.app.setConnectionEnabled(id, false);
-				break;
 			case "appearance-done":
 				await this.app.markAppearanceDone(id);
-				break;
-			case "remove":
-				await this.app.removeConnection(id);
-				break;
+				res.type("html").send(this.restartingPage("Saved."));
+				return;
 			default:
 				throw new HttpException("unknown action", 404);
 		}
-		res.redirect(303, "/admin");
-	}
-
-	@Post("repositories/:action")
-	@UseGuards(AdminAuthGuard)
-	async repositoryAction(
-		@Param("action") action: string,
-		@Body() body: Record<string, string>,
-		@Res() res: Response,
-	): Promise<void> {
-		if (action !== "enable" && action !== "disable")
-			throw new HttpException("unknown action", 404);
-		await this.app.setRepositoryEnabled(
-			String(body.repo ?? ""),
-			action === "enable",
-		);
 		res.redirect(303, "/admin");
 	}
 }

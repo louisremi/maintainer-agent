@@ -24,10 +24,10 @@ import {
 	FakeModelHealth,
 	FakePolicyValidator,
 	FakePublisher,
+	FakeRepositoryConfigurations,
 	FakeSanitizer,
 	FakeWorkspaces,
 	FixedClock,
-	fakeModels,
 	MemoryLogger,
 	RecordingPublisher,
 	SequentialIds,
@@ -50,7 +50,13 @@ export function maintenanceHarness(opts: { allowList?: string } = {}) {
 	const events = new RecordingPublisher();
 	const uow = new DirectUnitOfWork();
 	const ids = new SequentialIds("job");
-	const policies = new RepositoryPolicies(validator, DEFAULT_HOST_LIMITS, log);
+	const configurations = new FakeRepositoryConfigurations().add(REPO);
+	const policies = new RepositoryPolicies(
+		validator,
+		configurations,
+		DEFAULT_HOST_LIMITS,
+		log,
+	);
 	const handlers = new MaintenanceEventHandlers(forge, jobs, log);
 	events.subscribers.push((e) => handlers.handle(e));
 
@@ -66,7 +72,7 @@ export function maintenanceHarness(opts: { allowList?: string } = {}) {
 		events,
 		log,
 	});
-	const common = { workspaces, agents, sanitizer, models: fakeModels, log };
+	const common = { workspaces, agents, sanitizer, log };
 	const run = new RunNextJob({
 		jobs,
 		forge,
@@ -80,9 +86,9 @@ export function maintenanceHarness(opts: { allowList?: string } = {}) {
 		maxRuns: 3,
 		retryDelayMs: 1000,
 		handlers: [
-			new AnswerIssue({ ...common, stepLimit: 30 }),
+			new AnswerIssue(common),
 			new ProposeFix({ ...common, publisher }),
-			new ReviewChangeRequest({ ...common, stepLimit: 40 }),
+			new ReviewChangeRequest(common),
 		],
 	});
 

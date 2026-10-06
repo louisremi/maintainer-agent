@@ -9,11 +9,13 @@ import type {
 	ForgeSession,
 	GitAccess,
 	IssueSnapshot,
-	ModelCatalog,
 	ModelHealth,
 	OutputSanitizer,
+	PolicyValidation,
 	PolicyValidator,
 	PublishOutcome,
+	RepositoryConfiguration,
+	RepositoryConfigurations,
 	SanitizedText,
 	Workspace,
 	WorkspacePreparer,
@@ -22,7 +24,6 @@ import {
 	DEFAULT_POLICY,
 	type InlineComment,
 	type LabelDefinition,
-	type PolicyData,
 	type ProposedChange,
 	type Review,
 	type Verdict,
@@ -281,9 +282,10 @@ export class FakeForge implements ForgeAccess {
 
 export class FakePolicyValidator implements PolicyValidator {
 	constructor(
-		public result:
-			| { ok: true; data: PolicyData }
-			| { ok: false; errors: string[] } = { ok: true, data: DEFAULT_POLICY },
+		public result: PolicyValidation = {
+			ok: true,
+			policy: { data: DEFAULT_POLICY, setKeys: [] },
+		},
 	) {}
 	readonly seen: string[] = [];
 	async validate(raw: string) {
@@ -395,12 +397,44 @@ export class FakeSanitizer implements OutputSanitizer {
 	}
 }
 
-export const fakeModels: ModelCatalog = {
-	modelFor: () => ({
-		apiBase: "http://model.invalid/v1",
-		model: "openai/test",
-	}),
+const TEST_MODEL = {
+	apiBase: "http://model.invalid/v1",
+	model: "openai/test",
+	apiKey: null,
 };
+
+/**
+ * What settings.yml would configure: every repository listed in `configured`
+ * gets the default policy and the test model; others are not configured.
+ */
+export class FakeRepositoryConfigurations implements RepositoryConfigurations {
+	readonly configured = new Map<string, Partial<RepositoryConfiguration>>();
+
+	add(repo: RepoRef, over: Partial<RepositoryConfiguration> = {}): this {
+		this.configured.set(repo.key, over);
+		return this;
+	}
+
+	for(repo: RepoRef): RepositoryConfiguration | null {
+		const over = this.configured.get(repo.key);
+		if (!over) return null;
+		return {
+			base: DEFAULT_POLICY,
+			models: {
+				"answer-issue": TEST_MODEL,
+				"propose-fix": TEST_MODEL,
+				"review-change-request": TEST_MODEL,
+			},
+			allowRepositoryEgress: true,
+			connectionId: null,
+			...over,
+		};
+	}
+
+	allModels() {
+		return [TEST_MODEL];
+	}
+}
 
 export class FakeModelHealth implements ModelHealth {
 	available = true;

@@ -23,5 +23,8 @@ expect_violation "application importing an adapter" maintenance/application/port
 expect_violation "a context importing another context" maintenance/domain/labels.ts "import '../../connections/domain';"
 expect_violation "an adapter importing a forge adapter" adapters/http/html.ts "import '../forges/github';"
 expect_violation "a forge adapter importing the HTTP adapter" adapters/forges/github/webhook-signature.ts "import '../../http/html';"
+expect_violation "the settings domain importing a library" settings/domain/effective.ts "import 'yaml';"
+expect_violation "the settings context importing maintenance" settings/application/use-cases.ts "import '../../maintenance/domain';"
+expect_violation "maintenance importing the settings context" maintenance/application/ports.ts "import '../../settings/domain';"
 expect_violation "an adapter importing the composition root" adapters/system/system.ts "import '../../bootstrap/container';"
 (( failures == 0 ))

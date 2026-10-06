@@ -82,7 +82,11 @@ class FakeEngine implements ContainerEngine {
 	}
 }
 
-const MODEL = { apiBase: "http://10.0.0.5:8000/v1", model: "openai/qwen" };
+const MODEL = {
+	apiBase: "http://10.0.0.5:8000/v1",
+	model: "openai/qwen",
+	apiKey: "k",
+};
 
 describe("container hardening", () => {
 	const base: ContainerSpec = {
@@ -163,7 +167,6 @@ describe("Docker sandbox", () => {
 	const agents = () =>
 		new DockerAgentRunner(sandbox, {
 			dataDir: dir,
-			modelEnv: { LLM_API_KEY: "k" },
 			memoryMb: { issue: 1024, fix: 2048, review: 1024 },
 			timeoutMs: { issue: 1000, fix: 1000, review: 1000 },
 		});
@@ -434,7 +437,10 @@ describe("Docker sandbox", () => {
 			maxStepLimit: 120,
 			maxAttemptsCap: 5,
 		}).validate("version: 1");
-		expect(v).toMatchObject({ ok: true, data: { fix: { trigger: "label" } } });
+		expect(v).toMatchObject({
+			ok: true,
+			policy: { data: { fix: { trigger: "label" } } },
+		});
 		const s = await new DockerOutputSanitizer(sandbox).sanitize(["raw"], {
 			webUrl: "https://github.com/o/r",
 			extraLinks: ["https://docs.example.org/"],

@@ -6,6 +6,7 @@ const PUBLIC_ROUTES: readonly { method: string; path: RegExp }[] = [
 	{ method: "GET", path: /^\/admin\/github\/callback$/ },
 	{ method: "GET", path: /^\/installed$/ },
 	{ method: "GET", path: /^\/healthz$/ },
+	{ method: "GET", path: /^\/settings\/schema\.json$/ },
 ];
 
 /**

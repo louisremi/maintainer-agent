@@ -133,7 +133,9 @@ export class RunNextJob {
 			return {
 				result: {
 					kind: "succeeded",
-					outcome: `invalid policy in ${lookup.source}; dropped`,
+					outcome: lookup.source
+						? `invalid policy in ${lookup.source}; dropped`
+						: "repository no longer configured; dropped",
 				},
 				policy: null,
 			};
@@ -141,6 +143,7 @@ export class RunNextJob {
 			job,
 			session,
 			policy: lookup.policy,
+			models: lookup.models,
 			defaultBranch,
 			isLastAttempt: job.isLastAgentAttempt(
 				maxAgentAttempts(job.kind, lookup.policy),

@@ -42,8 +42,6 @@ const ReviewFile = z.object({
 
 export interface AgentRunnerConfig {
 	readonly dataDir: string;
-	/** Extra environment for the model client (e.g. LLM_API_KEY); never forge credentials. */
-	readonly modelEnv: Readonly<Record<string, string>>;
 	readonly memoryMb: { issue: number; fix: number; review: number };
 	readonly timeoutMs: { issue: number; fix: number; review: number };
 }
@@ -149,7 +147,8 @@ export class DockerAgentRunner implements AgentRunner {
 				runId: ws.id,
 				args: [],
 				env: {
-					...this.config.modelEnv,
+					// The model key is the only secret an agent sees; never forge credentials.
+					...(o.model.apiKey ? { LLM_API_KEY: o.model.apiKey } : {}),
 					LLM_API_BASE: o.model.apiBase,
 					LLM_MODEL: o.model.model,
 					MSWEA_STEP_LIMIT: String(o.stepLimit),

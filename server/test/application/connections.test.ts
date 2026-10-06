@@ -11,8 +11,8 @@ import {
 	ResolveRepositoryAccess,
 	ResyncAllConnections,
 	ResyncConnection,
-	SetRepositoryEnabled,
 	StartAppRegistration,
+	SyncConfiguredConnections,
 	SyncConnectionRepositories,
 } from "../../src/connections/application";
 import {
@@ -367,7 +367,7 @@ describe("several apps watching repositories", () => {
 		]);
 	});
 
-	it("can disable a repository and remove a connection with its repositories", async () => {
+	it("follows the settings: the chosen connection wins, removed connections take their repositories along", async () => {
 		const h = harness();
 		const c = await h.registered();
 		const other = await h.registered();
@@ -383,21 +383,12 @@ describe("several apps watching repositories", () => {
 			removed: [],
 			mode: "delta",
 		});
-		await new SetRepositoryEnabled(h.deps).execute({
-			repoKey: gh("me/a").key,
-			enabled: false,
-		});
-		expect(await h.resolve.execute(gh("me/a"))).toBeNull();
-		const before = h.events.events.length;
-		await new SetRepositoryEnabled(h.deps).execute({
-			repoKey: gh("me/a").key,
-			enabled: true,
-		});
-		// Re-enabling announces the repository again (labels are set up).
-		expect(h.events.events.slice(before).map((e) => e.type)).toEqual([
-			"connections.repository-watched",
-		]);
-		expect(await h.resolve.execute(gh("me/a"))).not.toBeNull();
+		expect((await h.resolve.execute(gh("me/a")))?.connectionId).toBe(c);
+		// settings.yml names `other` for this repository.
+		expect(
+			(await h.resolve.execute(gh("me/a"), undefined, other))?.connectionId,
+		).toBe(other);
+		expect(await h.resolve.execute(gh("me/a"), c, other)).toBeNull();
 
 		await new RemoveConnection(h.deps).execute({ connectionId: c });
 		expect(await h.deps.connections.get(c)).toBeNull();
@@ -405,5 +396,34 @@ describe("several apps watching repositories", () => {
 		expect(h.events.events.map((e) => e.type)).toContain(
 			"connections.repository-unwatched",
 		);
+	});
+
+	it("synchronises connections with settings.yml", async () => {
+		const h = harness();
+		const old = await h.registered();
+		const creds = {
+			appId: "9",
+			appSlug: "from-file",
+			botLogin: "from-file[bot]",
+			secrets: { webhookSecret: "w", privateKey: "p" },
+		};
+		const r = await new SyncConfiguredConnections(h.deps).execute([
+			{
+				id: "file",
+				platform: "github",
+				host: "github.com",
+				displayName: "from-file",
+				ownerAccount: null,
+				credentials: creds,
+				appearanceDone: true,
+			},
+		]);
+		expect(r).toEqual({ added: ["file"], removed: [old] });
+		const stored = await h.deps.connections.get("file");
+		expect(stored?.appearanceDone).toBe(true);
+		expect(
+			(await new GetConnectionAccess(h.deps).execute("file"))?.credentials
+				.appSlug,
+		).toBe("from-file");
 	});
 });

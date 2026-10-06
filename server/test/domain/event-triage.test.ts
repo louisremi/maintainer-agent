@@ -134,7 +134,11 @@ describe("EventTriage", () => {
 		[
 			"answers disabled by policy",
 			issueOpened(),
-			{ policy: policy({ answer: { enabled: false, maxAttempts: 1 } }) },
+			{
+				policy: policy({
+					answer: { enabled: false, maxAttempts: 1, stepLimit: 30 },
+				}),
+			},
 			/disabled/,
 		],
 		[
@@ -147,6 +151,7 @@ describe("EventTriage", () => {
 						maxComments: 1,
 						maxDiffLines: 100,
 						maxAttempts: 1,
+						stepLimit: 40,
 					},
 				}),
 			},

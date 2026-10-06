@@ -21,8 +21,11 @@ installation...) stay inside the forge adapters.
 | **Proposed change** | The fix agent's patch plus the title and description of the draft change request. | `ProposedChange` |
 | **Review** | The review agent's summary and inline comments; posted as a comment-only review. | `Review`, `InlineComment` |
 | **Placement** | Keeping only the inline comments that sit on lines of the diff (the rest goes into the summary). | `InlineCommentPlacement` |
-| **Repository policy** | The optional `.maintainer-agent.yml` (or `.github/…`, `.gitlab/…`) tailoring the agent for one repository. It can only lower the host limits. | `RepositoryPolicy` |
-| **Host limits** | Maxima set by the server operator (steps, attempts, comments, diff size, jobs per author). | `HostLimits` |
+| **Settings** | The operator's configuration, `settings.yml`: server, models, connections, defaults, repositories. Versioned and migrated on start. | `Settings` (settings context) |
+| **Effective repository settings** | Built-in values → `defaults` → `repositories.<key>`, clamped to the server limits. | `effectiveRepositorySettings` |
+| **Safe mode** | The server's state when `settings.yml` is invalid: admin pages only, nothing processed. | `LoadedSettings` |
+| **Repository policy** | The optional `.maintainer-agent.yml` (or `.github/…`, `.gitlab/…`) a repository's maintainers write. Layered on the settings; it can only narrow them. | `RepositoryPolicy`, `RepositoryFilePolicy` |
+| **Host limits** | `server.limits` in the settings: maxima nothing else can exceed (steps, attempts, comments, diff size, jobs per author). | `HostLimits`, `ServerLimits` |
 | **Agent run** | One sandboxed execution of the model-driven agent; it never sees a forge credential. | `AgentRunner` |
 | **Publishing** | Pushing a checked patch to a new `maintainer-agent/*` branch, without any model involved. | `ChangePublisher` |
 | **Sanitising** | Neutralising agent text before it is posted (links, images, mentions, markers, secrets); *held* text is not posted. | `OutputSanitizer` |

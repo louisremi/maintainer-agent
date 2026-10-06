@@ -9,7 +9,7 @@
  *   they meet only in adapters and the composition root (bootstrap).
  * - Adapters never import the bootstrap; forge adapters are wired only there.
  */
-const CORE = "^src/(shared-kernel|connections|maintenance)/";
+const CORE = "^src/(shared-kernel|connections|maintenance|settings)/";
 
 module.exports = {
 	forbidden: [
@@ -32,13 +32,13 @@ module.exports = {
 			comment:
 				"A domain layer may import its own domain and the shared kernel only.",
 			severity: "error",
-			from: { path: "^src/(connections|maintenance)/domain/" },
+			from: { path: "^src/(connections|maintenance|settings)/domain/" },
 			to: { path: "^src/(?!shared-kernel/|$1/domain/)" },
 		},
 		{
 			name: "application-does-not-know-adapters",
 			severity: "error",
-			from: { path: "^src/(connections|maintenance)/application/" },
+			from: { path: "^src/(connections|maintenance|settings)/application/" },
 			to: { path: "^src/(?!shared-kernel/|$1/(domain|application)/)" },
 		},
 		{
@@ -53,7 +53,9 @@ module.exports = {
 				"Adapters talk to a context through its application layer (ports, use cases, DTOs) and its public domain types.",
 			severity: "error",
 			from: { path: "^src/adapters/" },
-			to: { path: "^src/(connections|maintenance)/(?!domain/|application/)" },
+			to: {
+				path: "^src/(connections|maintenance|settings)/(?!domain/|application/)",
+			},
 		},
 		{
 			name: "forge-adapters-are-isolated",

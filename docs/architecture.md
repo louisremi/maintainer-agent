@@ -70,6 +70,27 @@ and which repositories each one reaches.
   `PolicyValidator`, `WorkspacePreparer`, `AgentRunner`, `ChangePublisher`,
   `OutputSanitizer`, `ModelCatalog`, `ModelHealth`.
 
+**Settings** (supporting): the operator's configuration file, `settings.yml`.
+- Domain: `Settings` (server, models, connections, defaults, repositories),
+  the layering rules (`mergeLayers`: maps merge, lists replace, absent keys
+  inherit), `effectiveRepositorySettings` (built-ins → defaults → repository,
+  clamped to `server.limits`), secret placeholder names.
+- Application: `LoadSettings` (create if missing → migrate step by step with
+  a backup → validate; invalid means safe mode), `ValidateSettingsText`,
+  `SaveSettingsText` (validate, back up, write atomically, restart),
+  `EditSettings` (programmatic, comment-preserving edits). Ports:
+  `SettingsFile`, `SettingsMigrations`, `SettingsParser`, `ProcessControl`.
+- Adapters (`adapters/settings-file`, `adapters/secrets`): the zod schema and
+  its JSON Schema export, YAML parsing with line/column errors, `{MA_*}`
+  secret resolution (Docker secrets > environment > `secrets.yaml`),
+  migrations, the v0.2 import. `adapters/settings-bridge` turns settings into
+  Maintenance's `RepositoryConfigurations` port.
+
+Settings are read once at start-up and passed to the composition root; the
+running server never re-reads them (changes restart the process). The
+database keeps operational state only: jobs, deliveries, and a projection of
+the connections and of which repositories each reaches.
+
 The contexts never import each other. They meet in two places:
 - `adapters/forge-access/connection-backed-forge-access.ts` implements
   Maintenance's `ForgeAccess` by asking Connections which credentials own a

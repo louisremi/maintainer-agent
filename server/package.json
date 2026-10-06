@@ -20,8 +20,8 @@
     "check": "pnpm check:style && pnpm typecheck && pnpm arch && pnpm test",
     "start": "node dist/bootstrap/main.js",
     "prepare": "[ -d ../.git ] && lefthook install || true",
-    "schema:write": "tsc -p tsconfig.build.json && node dist/bootstrap/cli.js schema --write ../docs/settings.schema.json",
-    "schema:check": "tsc -p tsconfig.build.json && node dist/bootstrap/cli.js schema --check ../docs/settings.schema.json"
+    "schema:write": "tsc -p tsconfig.build.json && node dist/bootstrap/cli.js schema --write ../docs/settings.schema.json && cp ../docs/settings.schema.json assets/settings.schema.json && cp ../docs/settings.example.yml assets/settings.default.yml",
+    "schema:check": "tsc -p tsconfig.build.json && node dist/bootstrap/cli.js schema --check ../docs/settings.schema.json && cmp -s ../docs/settings.schema.json assets/settings.schema.json && cmp -s ../docs/settings.example.yml assets/settings.default.yml"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.2",

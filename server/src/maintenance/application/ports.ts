@@ -6,6 +6,7 @@ import type {
 	MaintenanceJob,
 	PolicyData,
 	ProposedChange,
+	RepositoryFilePolicy,
 	Review,
 	Verdict,
 } from "../domain";
@@ -141,7 +142,7 @@ export interface ForgeAccess {
 // ----------------------------------------------------------------------------- sandbox
 
 export type PolicyValidation =
-	| { readonly ok: true; readonly data: PolicyData }
+	| { readonly ok: true; readonly policy: RepositoryFilePolicy }
 	| { readonly ok: false; readonly errors: readonly string[] };
 
 /** Validates untrusted policy text from a repository (in isolation). */
@@ -261,11 +262,28 @@ export interface OutputSanitizer {
 export interface ModelChoice {
 	readonly apiBase: string;
 	readonly model: string;
+	/** Sent to the endpoint; reaches agent containers (never a forge credential). */
+	readonly apiKey: string | null;
 }
 
-/** Which model serves which kind of job (operator configuration). */
-export interface ModelCatalog {
-	modelFor(kind: JobKind): ModelChoice;
+/**
+ * What the operator configured for a repository (settings.yml), before the
+ * repository's own policy file is layered on top. Null: not configured, or
+ * paused; the server does nothing there.
+ */
+export interface RepositoryConfiguration {
+	readonly base: PolicyData;
+	readonly models: Readonly<Record<JobKind, ModelChoice>>;
+	/** Whether the repository's own policy file may add egress hosts. */
+	readonly allowRepositoryEgress: boolean;
+	/** Connection id the operator chose, if any. */
+	readonly connectionId: string | null;
+}
+
+export interface RepositoryConfigurations {
+	for(repo: RepoRef): RepositoryConfiguration | null;
+	/** Every endpoint in use, for the health check. */
+	allModels(): readonly ModelChoice[];
 }
 
 export interface ModelHealth {

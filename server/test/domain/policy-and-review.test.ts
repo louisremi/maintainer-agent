@@ -16,7 +16,7 @@ describe("RepositoryPolicy", () => {
 		const p = RepositoryPolicy.from(
 			{
 				...DEFAULT_POLICY,
-				answer: { enabled: true, maxAttempts: 99 },
+				answer: { enabled: true, maxAttempts: 99, stepLimit: 30 },
 				fix: {
 					enabled: true,
 					trigger: "maintainers",
@@ -28,6 +28,7 @@ describe("RepositoryPolicy", () => {
 					maxComments: 9999,
 					maxDiffLines: 10 ** 9,
 					maxAttempts: 99,
+					stepLimit: 40,
 				},
 			},
 			DEFAULT_HOST_LIMITS,
@@ -150,5 +151,120 @@ describe("agent results", () => {
 		expect(() =>
 			Review.of("s", [{ path: "a", line: 0, side: "RIGHT", body: "b" }]),
 		).toThrow(DomainError);
+	});
+});
+
+describe("RepositoryPolicy.layered (settings.yml, narrowed by the repository's file)", () => {
+	const base = {
+		...DEFAULT_POLICY,
+		egress: ["registry.npmjs.org"],
+		checks: ["make test"],
+		fix: {
+			enabled: true,
+			trigger: "maintainers" as const,
+			maxAttempts: 3,
+			stepLimit: 80,
+		},
+	};
+	const file = (over: Partial<typeof DEFAULT_POLICY>, setKeys: string[]) => ({
+		data: { ...DEFAULT_POLICY, ...over },
+		setKeys,
+	});
+
+	it("keeps the operator's settings when there is no file, or for keys the file does not set", () => {
+		expect(
+			RepositoryPolicy.layered(base, null, DEFAULT_HOST_LIMITS, true).fix
+				.stepLimit,
+		).toBe(80);
+		const p = RepositoryPolicy.layered(
+			base,
+			file(
+				{
+					fix: {
+						enabled: true,
+						trigger: "maintainers",
+						maxAttempts: 2,
+						stepLimit: 10,
+					},
+				},
+				[],
+			),
+			DEFAULT_HOST_LIMITS,
+			true,
+		);
+		expect(p.fix).toEqual({
+			enabled: true,
+			trigger: "maintainers",
+			maxAttempts: 3,
+			stepLimit: 80,
+		});
+	});
+
+	it("lets the file lower limits, switch features off and require the label, never the reverse", () => {
+		const lower = RepositoryPolicy.layered(
+			base,
+			file(
+				{
+					fix: {
+						enabled: true,
+						trigger: "label",
+						maxAttempts: 1,
+						stepLimit: 40,
+					},
+					review: { ...DEFAULT_POLICY.review, enabled: false },
+				},
+				["fix.step_limit", "fix.max_attempts", "fix.trigger", "review.enabled"],
+			),
+			DEFAULT_HOST_LIMITS,
+			true,
+		);
+		expect(lower.fix).toMatchObject({
+			trigger: "label",
+			maxAttempts: 1,
+			stepLimit: 40,
+		});
+		expect(lower.review.enabled).toBe(false);
+		const raise = RepositoryPolicy.layered(
+			{ ...base, answer: { ...base.answer, enabled: false } },
+			file(
+				{
+					answer: { enabled: true, maxAttempts: 5, stepLimit: 30 },
+					fix: {
+						enabled: true,
+						trigger: "maintainers",
+						maxAttempts: 5,
+						stepLimit: 120,
+					},
+				},
+				[
+					"answer.enabled",
+					"answer.max_attempts",
+					"fix.step_limit",
+					"fix.max_attempts",
+				],
+			),
+			DEFAULT_HOST_LIMITS,
+			true,
+		);
+		expect(raise.answer.enabled).toBe(false);
+		expect(raise.answer.maxAttempts).toBe(2);
+		expect(raise.fix.stepLimit).toBe(80);
+		expect(raise.fix.maxAttempts).toBe(3);
+	});
+
+	it("adds the file's checks and links; egress only when the operator allows it", () => {
+		const f = file({ egress: ["pypi.org"], checks: ["npm test"] }, [
+			"egress",
+			"checks",
+		]);
+		expect(
+			RepositoryPolicy.layered(base, f, DEFAULT_HOST_LIMITS, true).egress,
+		).toEqual(["registry.npmjs.org", "pypi.org"]);
+		expect(
+			RepositoryPolicy.layered(base, f, DEFAULT_HOST_LIMITS, false).egress,
+		).toEqual(["registry.npmjs.org"]);
+		expect(
+			RepositoryPolicy.layered(base, f, DEFAULT_HOST_LIMITS, false).data.checks,
+		).toEqual(["make test", "npm test"]);
 	});
 });

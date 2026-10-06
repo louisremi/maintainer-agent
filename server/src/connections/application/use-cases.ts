@@ -1,11 +1,11 @@
-import {
-	type Clock,
-	type EventPublisher,
-	type IdGenerator,
-	type Logger,
-	type Platform,
+import type {
+	Clock,
+	EventPublisher,
+	IdGenerator,
+	Logger,
+	Platform,
 	RepoRef,
-	type UnitOfWork,
+	UnitOfWork,
 } from "../../shared-kernel";
 import {
 	ClaimPolicy,
@@ -177,6 +177,54 @@ export class RegisterConfiguredConnection {
 }
 
 /**
+ * Makes the stored connections match the operator's settings (settings.yml
+ * is the source of truth; the database keeps a projection the rest of the
+ * server reads). Connections missing from the settings are removed, with the
+ * repositories they reached; pending registrations are kept.
+ */
+export class SyncConfiguredConnections {
+	constructor(private readonly d: ConnectionsDeps) {}
+
+	async execute(
+		configured: readonly {
+			id: string;
+			platform: Platform;
+			host: string;
+			displayName: string;
+			ownerAccount: string | null;
+			credentials: ConnectionCredentials;
+			appearanceDone: boolean;
+		}[],
+	): Promise<{ added: string[]; removed: string[] }> {
+		const register = new RegisterConfiguredConnection(this.d);
+		const remove = new RemoveConnection(this.d);
+		const ids = new Set(configured.map((c) => c.id));
+		const result = { added: [] as string[], removed: [] as string[] };
+		for (const c of configured) {
+			const existed = (await this.d.connections.get(c.id)) !== null;
+			await register.execute(c);
+			if (c.appearanceDone) {
+				await this.d.uow.run(async () => {
+					const stored = await this.d.connections.get(c.id);
+					if (stored && !stored.appearanceDone) {
+						stored.markAppearanceDone(this.d.clock.now());
+						await this.d.connections.save(stored);
+					}
+				});
+			}
+			if (!existed) result.added.push(c.id);
+		}
+		for (const c of await this.d.connections.list()) {
+			if (c.status !== "pending" && !ids.has(c.id)) {
+				await remove.execute({ connectionId: c.id });
+				result.removed.push(c.id);
+			}
+		}
+		return result;
+	}
+}
+
+/**
  * Applies the forge's view of which repositories a connection can reach.
  * `mode: 'replace'` treats `added` as the complete list.
  */
@@ -333,26 +381,6 @@ export class ResyncAllConnections {
 	}
 }
 
-export class SetRepositoryEnabled {
-	constructor(private readonly d: ConnectionsDeps) {}
-
-	async execute(input: { repoKey: string; enabled: boolean }): Promise<void> {
-		const repo = await this.d.uow.run(async () => {
-			const found = await this.d.repositories.get(RepoRef.parse(input.repoKey));
-			if (!found)
-				throw new ConnectionsError(
-					`not watched: ${input.repoKey}`,
-					"not-found",
-				);
-			if (input.enabled) found.enable(this.d.clock.now());
-			else found.disable();
-			await this.d.repositories.save(found);
-			return found;
-		});
-		await this.d.events.publish(repo.pullEvents());
-	}
-}
-
 /** The operator set the app's logo on the forge: stop reminding them. */
 export class MarkAppearanceDone {
 	constructor(private readonly d: ConnectionsDeps) {}
@@ -480,15 +508,24 @@ export class GetConnectionAccess {
 export class ResolveRepositoryAccess {
 	constructor(private readonly d: ConnectionsDeps) {}
 
+	/**
+	 * `preferred`: the connection the operator chose for this repository in
+	 * the settings, when several can reach it.
+	 */
 	async execute(
 		repo: RepoRef,
 		viaConnectionId?: string,
+		preferred?: string | null,
 	): Promise<ConnectionAccess | null> {
 		const watched = await this.d.repositories.get(repo);
-		if (!watched?.enabled) return null;
-		if (viaConnectionId && watched.connectionId !== viaConnectionId)
-			return null;
-		const c = await this.d.connections.get(watched.connectionId);
+		if (!watched) return null;
+		const reachable = [watched.connectionId, ...watched.contestedBy];
+		const owner =
+			preferred && reachable.includes(preferred)
+				? preferred
+				: watched.connectionId;
+		if (viaConnectionId && owner !== viaConnectionId) return null;
+		const c = await this.d.connections.get(owner);
 		return c ? toAccess(c) : null;
 	}
 }

@@ -347,6 +347,30 @@ def normalise(doc) -> dict:
     return p
 
 
+_SECTION_KEYS = {"answer", "fix", "review", "playbooks", "triage"}
+_RENAMED = {"triage": "answer"}
+_RENAMED_SUB = {"triage": "issue"}
+
+
+def _set_keys(doc) -> set:
+    """Dotted names of the settings present in the file (normalised names)."""
+    keys = set()
+    if not isinstance(doc, dict):
+        return keys
+    for k, v in doc.items():
+        if k in ("version", "bot_branches", "bot_authors"):
+            continue
+        name = _RENAMED.get(k, k)
+        if k in _SECTION_KEYS and isinstance(v, dict):
+            for sub in v:
+                if sub in ("max_age_days", "ci-fix"):
+                    continue
+                keys.add(f"{name}.{_RENAMED_SUB.get(sub, sub) if k == 'playbooks' else sub}")
+        else:
+            keys.add(name)
+    return keys
+
+
 def main() -> int:
     raw = sys.stdin.read(65536)
     try:
@@ -356,6 +380,9 @@ def main() -> int:
         for line in str(e).splitlines():
             print(f"policy error: {line}", file=sys.stderr)
         return 1
+    # Which settings the file actually wrote: the server layers only these on
+    # top of its own settings for the repository (absent keys inherit).
+    policy["set_keys"] = sorted(_set_keys(doc))
     json.dump(policy, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return 0

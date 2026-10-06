@@ -1,20 +1,13 @@
 import type { Logger } from "../../shared-kernel";
 import { DiffHunks, InlineCommentPlacement, Labels, Markers } from "../domain";
 import type { JobHandler, JobResult, JobRunContext } from "./job-handler";
-import type {
-	AgentRunner,
-	ModelCatalog,
-	OutputSanitizer,
-	WorkspacePreparer,
-} from "./ports";
+import type { AgentRunner, OutputSanitizer, WorkspacePreparer } from "./ports";
 import { buildTask, footer } from "./task-builder";
 
 export interface ReviewChangeRequestDeps {
 	readonly workspaces: WorkspacePreparer;
 	readonly agents: AgentRunner;
 	readonly sanitizer: OutputSanitizer;
-	readonly models: ModelCatalog;
-	readonly stepLimit: number;
 	readonly log: Logger;
 }
 
@@ -74,8 +67,8 @@ export class ReviewChangeRequest implements JobHandler {
 				}),
 			);
 			const run = await this.d.agents.reviewChange(ws, {
-				model: this.d.models.modelFor(job.kind),
-				stepLimit: this.d.stepLimit,
+				model: ctx.models[job.kind],
+				stepLimit: policy.review.stepLimit,
 				extraEgress: [],
 			});
 			if (!run.ok)

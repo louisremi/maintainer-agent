@@ -1,0 +1,633 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"version": {
+			"type": "number",
+			"const": 1,
+			"description": "Schema version. The server migrates older files on start."
+		},
+		"server": {
+			"type": "object",
+			"properties": {
+				"public_url": {
+					"type": "string",
+					"pattern": "^https?:\\/\\/\\S+$",
+					"description": "HTTPS URL where the forge reaches this server (webhooks, app registration)."
+				},
+				"public_paths_only_via_host": {
+					"description": "Host name of public_url on which only webhooks, the registration callback and /healthz answer; /admin stays on other addresses.",
+					"type": "string",
+					"pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\\d{1,5})?$"
+				},
+				"admin_token": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Password of /admin (any user name). Secret: write a {MA_NAME} placeholder.",
+					"secret": true
+				},
+				"allowed_accounts": {
+					"default": [],
+					"description": "Accounts (`name` or `host/name`) whose repositories this server may serve. Empty: any. Required for public apps.",
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9._/-]+$"
+					}
+				},
+				"runner_image": {
+					"default": "louisremi/maintainer-agent:latest",
+					"description": "Image of the agent containers.",
+					"type": "string",
+					"minLength": 1
+				},
+				"docker_pull": {
+					"default": "missing",
+					"description": "Pull the runner image at start.",
+					"type": "string",
+					"enum": [
+						"always",
+						"missing",
+						"never"
+					]
+				},
+				"max_concurrent_jobs": {
+					"default": 1,
+					"description": "Agent runs in parallel.",
+					"type": "integer",
+					"exclusiveMinimum": 0,
+					"maximum": 9007199254740991
+				},
+				"job_retention_days": {
+					"default": 14,
+					"description": "Finished jobs and their files are deleted after this.",
+					"type": "integer",
+					"exclusiveMinimum": 0,
+					"maximum": 9007199254740991
+				},
+				"git_author": {
+					"default": "maintainer-agent <maintainer-agent@users.noreply.github.com>",
+					"description": "Author of proposed commits.",
+					"type": "string",
+					"pattern": "^[^<>]+ <[^<>\\s]+@[^<>\\s]+>$"
+				},
+				"limits": {
+					"default": {
+						"max_step_limit": 120,
+						"max_attempts": 5,
+						"max_jobs_per_author_per_day": 5,
+						"max_review_comments": 50,
+						"max_diff_lines": 20000
+					},
+					"type": "object",
+					"properties": {
+						"max_step_limit": {
+							"default": 120,
+							"description": "Most agent steps any job may take.",
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"max_attempts": {
+							"default": 5,
+							"description": "Most agent attempts per job.",
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"max_jobs_per_author_per_day": {
+							"default": 5,
+							"description": "Automatic jobs per non-maintainer author per day.",
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"max_review_comments": {
+							"default": 50,
+							"description": "Most inline comments per review.",
+							"type": "integer",
+							"minimum": 0,
+							"maximum": 9007199254740991
+						},
+						"max_diff_lines": {
+							"default": 20000,
+							"description": "Largest diff reviewed line by line.",
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						}
+					},
+					"additionalProperties": false,
+					"description": "Host caps. Values configured in `defaults`, `repositories` or a repository's own policy file are clamped to them."
+				}
+			},
+			"required": [
+				"public_url"
+			],
+			"additionalProperties": false
+		},
+		"models": {
+			"type": "object",
+			"propertyNames": {
+				"type": "string",
+				"pattern": "^[A-Za-z0-9_-]+$"
+			},
+			"additionalProperties": {
+				"type": "object",
+				"properties": {
+					"api_base": {
+						"type": "string",
+						"pattern": "^https?:\\/\\/\\S+$",
+						"description": "OpenAI-compatible base URL, e.g. http://10.0.0.5:8000/v1."
+					},
+					"model": {
+						"type": "string",
+						"minLength": 1,
+						"description": "litellm model name, e.g. openai/<served-model-id>."
+					},
+					"api_key": {
+						"type": "string",
+						"minLength": 1,
+						"description": "API key sent to the endpoint. Secret: write a {MA_NAME} placeholder.",
+						"secret": true
+					}
+				},
+				"required": [
+					"api_base",
+					"model"
+				],
+				"additionalProperties": false
+			},
+			"description": "Named model endpoints; `default` is used unless a repository selects another."
+		},
+		"connections": {
+			"description": "Forge accounts (GitHub Apps). The key is the webhook path: /webhooks/<key>.",
+			"type": "object",
+			"propertyNames": {
+				"type": "string",
+				"pattern": "^[A-Za-z0-9_-]{1,64}$"
+			},
+			"additionalProperties": {
+				"type": "object",
+				"properties": {
+					"platform": {
+						"default": "github",
+						"type": "string",
+						"enum": [
+							"github",
+							"gitlab"
+						]
+					},
+					"host": {
+						"default": "github.com",
+						"type": "string",
+						"pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\\d{1,5})?$"
+					},
+					"display_name": {
+						"type": "string"
+					},
+					"owner_account": {
+						"description": "Organisation the app is registered under; omit for a personal account.",
+						"type": "string"
+					},
+					"app_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"pattern": "^\\d+$"
+							},
+							{
+								"type": "integer",
+								"exclusiveMinimum": 0,
+								"maximum": 9007199254740991
+							}
+						],
+						"description": "GitHub App id."
+					},
+					"app_slug": {
+						"type": "string",
+						"pattern": "^[a-z0-9-]+$",
+						"description": "GitHub App slug (its URL name)."
+					},
+					"private_key": {
+						"type": "string",
+						"minLength": 1,
+						"description": "GitHub App private key (PEM). Secret: write a {MA_NAME} placeholder.",
+						"secret": true
+					},
+					"webhook_secret": {
+						"type": "string",
+						"minLength": 1,
+						"description": "GitHub App webhook secret. Secret: write a {MA_NAME} placeholder.",
+						"secret": true
+					},
+					"appearance_done": {
+						"default": false,
+						"description": "The app's logo was uploaded (hides the reminder in /admin).",
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"app_id",
+					"app_slug",
+					"private_key",
+					"webhook_secret"
+				],
+				"additionalProperties": false
+			}
+		},
+		"defaults": {
+			"default": {},
+			"description": "Applies to every repository; a repository entry overrides it per key (maps merge, lists replace).",
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"description": "false keeps the entry but pauses processing.",
+					"type": "boolean"
+				},
+				"connection": {
+					"description": "Id under `connections` to act through (needed only when several reach the repository).",
+					"type": "string"
+				},
+				"model": {
+					"description": "Model name for every job, or per job: {answer, fix, review}.",
+					"anyOf": [
+						{
+							"type": "string",
+							"pattern": "^[A-Za-z0-9_-]+$"
+						},
+						{
+							"type": "object",
+							"properties": {
+								"answer": {
+									"type": "string",
+									"pattern": "^[A-Za-z0-9_-]+$"
+								},
+								"fix": {
+									"type": "string",
+									"pattern": "^[A-Za-z0-9_-]+$"
+								},
+								"review": {
+									"type": "string",
+									"pattern": "^[A-Za-z0-9_-]+$"
+								}
+							},
+							"additionalProperties": false
+						}
+					]
+				},
+				"answer": {
+					"description": "First answers to new issues.",
+					"type": "object",
+					"properties": {
+						"enabled": {
+							"type": "boolean"
+						},
+						"max_attempts": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"step_limit": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						}
+					},
+					"additionalProperties": false
+				},
+				"fix": {
+					"description": "Draft pull requests for bugs and features.",
+					"type": "object",
+					"properties": {
+						"enabled": {
+							"type": "boolean"
+						},
+						"max_attempts": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"step_limit": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"trigger": {
+							"type": "string",
+							"enum": [
+								"maintainers",
+								"label"
+							]
+						}
+					},
+					"additionalProperties": false
+				},
+				"review": {
+					"description": "Comment-only reviews of new pull requests.",
+					"type": "object",
+					"properties": {
+						"enabled": {
+							"type": "boolean"
+						},
+						"max_attempts": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"step_limit": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						},
+						"max_comments": {
+							"type": "integer",
+							"minimum": 0,
+							"maximum": 9007199254740991
+						},
+						"max_diff_lines": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"maximum": 9007199254740991
+						}
+					},
+					"additionalProperties": false
+				},
+				"instructions": {
+					"description": "Files the agent reads first.",
+					"maxItems": 10,
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+					}
+				},
+				"playbooks": {
+					"type": "object",
+					"properties": {
+						"issue": {
+							"type": "string",
+							"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+						},
+						"implement": {
+							"type": "string",
+							"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+						},
+						"review": {
+							"type": "string",
+							"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+						}
+					},
+					"additionalProperties": false
+				},
+				"checks": {
+					"description": "Commands the fix agent runs to verify a change.",
+					"maxItems": 10,
+					"type": "array",
+					"items": {
+						"type": "string",
+						"maxLength": 300
+					}
+				},
+				"egress": {
+					"description": "Extra hosts the fix agent may reach.",
+					"maxItems": 50,
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[a-z0-9*]([a-z0-9*.-]*[a-z0-9])?$"
+					}
+				},
+				"links": {
+					"description": "Extra URL prefixes allowed as links in posted text.",
+					"maxItems": 20,
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^https:\\/\\/[A-Za-z0-9.-]+(\\/\\S*)?$"
+					}
+				},
+				"protected_paths": {
+					"description": "Paths a proposed change must never touch.",
+					"maxItems": 50,
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+					}
+				},
+				"allow_repository_egress": {
+					"description": "Whether the repository's own policy file may add egress hosts.",
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false
+		},
+		"repositories": {
+			"description": "The repositories this server acts on, keyed host/owner/name. Others are ignored.",
+			"type": "object",
+			"propertyNames": {
+				"type": "string",
+				"pattern": "^[a-z0-9.-]+(:\\d+)?(\\/[A-Za-z0-9_.-]+){2,}$"
+			},
+			"additionalProperties": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"enabled": {
+								"description": "false keeps the entry but pauses processing.",
+								"type": "boolean"
+							},
+							"connection": {
+								"description": "Id under `connections` to act through (needed only when several reach the repository).",
+								"type": "string"
+							},
+							"model": {
+								"description": "Model name for every job, or per job: {answer, fix, review}.",
+								"anyOf": [
+									{
+										"type": "string",
+										"pattern": "^[A-Za-z0-9_-]+$"
+									},
+									{
+										"type": "object",
+										"properties": {
+											"answer": {
+												"type": "string",
+												"pattern": "^[A-Za-z0-9_-]+$"
+											},
+											"fix": {
+												"type": "string",
+												"pattern": "^[A-Za-z0-9_-]+$"
+											},
+											"review": {
+												"type": "string",
+												"pattern": "^[A-Za-z0-9_-]+$"
+											}
+										},
+										"additionalProperties": false
+									}
+								]
+							},
+							"answer": {
+								"description": "First answers to new issues.",
+								"type": "object",
+								"properties": {
+									"enabled": {
+										"type": "boolean"
+									},
+									"max_attempts": {
+										"type": "integer",
+										"exclusiveMinimum": 0,
+										"maximum": 9007199254740991
+									},
+									"step_limit": {
+										"type": "integer",
+										"exclusiveMinimum": 0,
+										"maximum": 9007199254740991
+									}
+								},
+								"additionalProperties": false
+							},
+							"fix": {
+								"description": "Draft pull requests for bugs and features.",
+								"type": "object",
+								"properties": {
+									"enabled": {
+										"type": "boolean"
+									},
+									"max_attempts": {
+										"type": "integer",
+										"exclusiveMinimum": 0,
+										"maximum": 9007199254740991
+									},
+									"step_limit": {
+										"type": "integer",
+										"exclusiveMinimum": 0,
+										"maximum": 9007199254740991
+									},
+									"trigger": {
+										"type": "string",
+										"enum": [
+											"maintainers",
+											"label"
+										]
+									}
+								},
+								"additionalProperties": false
+							},
+							"review": {
+								"description": "Comment-only reviews of new pull requests.",
+								"type": "object",
+								"properties": {
+									"enabled": {
+										"type": "boolean"
+									},
+									"max_attempts": {
+										"type": "integer",
+										"exclusiveMinimum": 0,
+										"maximum": 9007199254740991
+									},
+									"step_limit": {
+										"type": "integer",
+										"exclusiveMinimum": 0,
+										"maximum": 9007199254740991
+									},
+									"max_comments": {
+										"type": "integer",
+										"minimum": 0,
+										"maximum": 9007199254740991
+									},
+									"max_diff_lines": {
+										"type": "integer",
+										"exclusiveMinimum": 0,
+										"maximum": 9007199254740991
+									}
+								},
+								"additionalProperties": false
+							},
+							"instructions": {
+								"description": "Files the agent reads first.",
+								"maxItems": 10,
+								"type": "array",
+								"items": {
+									"type": "string",
+									"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+								}
+							},
+							"playbooks": {
+								"type": "object",
+								"properties": {
+									"issue": {
+										"type": "string",
+										"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+									},
+									"implement": {
+										"type": "string",
+										"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+									},
+									"review": {
+										"type": "string",
+										"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+									}
+								},
+								"additionalProperties": false
+							},
+							"checks": {
+								"description": "Commands the fix agent runs to verify a change.",
+								"maxItems": 10,
+								"type": "array",
+								"items": {
+									"type": "string",
+									"maxLength": 300
+								}
+							},
+							"egress": {
+								"description": "Extra hosts the fix agent may reach.",
+								"maxItems": 50,
+								"type": "array",
+								"items": {
+									"type": "string",
+									"pattern": "^[a-z0-9*]([a-z0-9*.-]*[a-z0-9])?$"
+								}
+							},
+							"links": {
+								"description": "Extra URL prefixes allowed as links in posted text.",
+								"maxItems": 20,
+								"type": "array",
+								"items": {
+									"type": "string",
+									"pattern": "^https:\\/\\/[A-Za-z0-9.-]+(\\/\\S*)?$"
+								}
+							},
+							"protected_paths": {
+								"description": "Paths a proposed change must never touch.",
+								"maxItems": 50,
+								"type": "array",
+								"items": {
+									"type": "string",
+									"pattern": "^(?!\\/)(?!.*(^|\\/)\\.\\.(\\/|$))[A-Za-z0-9._/*@+-]+$"
+								}
+							},
+							"allow_repository_egress": {
+								"description": "Whether the repository's own policy file may add egress hosts.",
+								"type": "boolean"
+							}
+						},
+						"additionalProperties": false
+					},
+					{
+						"type": "null"
+					}
+				]
+			}
+		}
+	},
+	"required": [
+		"version",
+		"server",
+		"models"
+	],
+	"additionalProperties": false
+}

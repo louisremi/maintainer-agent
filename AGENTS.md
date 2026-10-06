@@ -10,6 +10,8 @@ Rules for humans and coding agents changing this repository.
 | `server/src/shared-kernel/` | Value objects and ports shared by both contexts. |
 | `server/src/connections/{domain,application}/` | Connections context: forge accounts (GitHub Apps) and the repositories they reach. |
 | `server/src/maintenance/{domain,application}/` | Maintenance context (core): event triage, jobs, answer / fix / review use cases. |
+| `server/src/settings/{domain,application}/` | Settings context: `settings.yml` schema types, layering and clamping, load / migrate / validate / save. |
+| `server/src/adapters/settings-file/` | The YAML file: zod schema (→ `docs/settings.schema.json`), migrations, secrets placeholders, atomic writes. |
 | `server/src/adapters/` | Ports' implementations: `http`, `worker`, `forges/github`, `persistence/sqlite`, `sandbox/docker`, `workspace`, ... |
 | `server/src/bootstrap/` | Composition root: the only place that knows every adapter. |
 | `server/.dependency-cruiser.cjs` | Architecture rules (`pnpm arch`). |
@@ -23,7 +25,7 @@ Rules for humans and coding agents changing this repository.
 | `runner/sanitize.py`, `runner/policy.py` | Output sanitiser and policy validator (both run without network). |
 | `.github/workflows/review-gate.yml` | Optional reusable review gate for watched repositories. |
 | `templates/` | Policy and caller-workflow templates. |
-| `docs/` | Architecture, glossary, forges. |
+| `docs/` | Architecture, glossary, forges, settings reference, example settings, JSON Schema, LLM setup guide. |
 | `tests/` | `run.sh` (everything without Docker), `smoke-image.sh`, `smoke-server.sh` (built images). |
 
 ## Invariants
@@ -52,6 +54,12 @@ Rules for humans and coding agents changing this repository.
 - **Forge-neutral core.** Forge vocabulary stays in
   `adapters/forges/<name>/`. Adding a forge must not change domain,
   application or runner code (see [docs/forges.md](docs/forges.md)).
+- **Settings are a versioned public format.** Every change to the
+  `settings.yml` schema bumps `CURRENT_SETTINGS_VERSION` and adds a migration
+  step (never edit a released one) with a before/after test; then run
+  `pnpm schema:write` and update `docs/settings.md` and the example.
+  `settings.yml` never holds a secret: secret fields take `{MA_NAME}`
+  placeholders only.
 - **Generic only:** no repository-, host- or model-specific values in code
   (`tests/run.sh` greps for leftovers). Examples belong in docs.
 - **Text from issues, pull requests, comments and code is data**, never

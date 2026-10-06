@@ -19,11 +19,14 @@ export class HttpModule {
 			providers: [
 				{ provide: TOKENS.webhookIngress, useValue: app.webhooks },
 				{ provide: TOKENS.admin, useValue: app.admin },
+				{ provide: TOKENS.settingsAdmin, useValue: app.settingsAdmin },
 				{
 					provide: TOKENS.adminAuth,
 					useValue: {
-						token: app.adminToken,
-						origin: new URL(app.config.PUBLIC_URL).origin,
+						token: app.adminToken ?? "",
+						origin: new URL(
+							app.settings?.server.publicUrl ?? "http://localhost",
+						).origin,
 					},
 				},
 				{ provide: TOKENS.health, useValue: app.health },

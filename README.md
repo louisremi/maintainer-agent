@@ -36,66 +36,66 @@ reverse proxy, Cloudflare Tunnel, Tailscale Funnel...), and an
 OpenAI-compatible endpoint with tool calling (vLLM, llama.cpp server,
 Ollama, LM Studio, a hosted API...) reachable from Docker containers.
 
-1. Copy [compose.example.yaml](compose.example.yaml) to `compose.yaml` and
-   set `PUBLIC_URL`, `LLM_API_BASE`, `LLM_MODEL` and `SECRETS_KEY`.
-2. `docker compose up -d`, then read the admin password from the logs:
-   `docker compose logs server | grep "admin password"` (it is also stored in
-   `DATA_DIR/admin-token`).
-3. Open `PUBLIC_URL/admin` (any user name, that password) and click
-   **Create the app on GitHub**. GitHub shows the preconfigured app (name,
-   permissions, webhook URL); confirm it, and you land on its installation
-   page.
-4. Optional: give the app its avatar. GitHub has no API for this, so
-   `/admin` shows a reminder next to each new app, with the logo to download
-   ([docs/assets/maintainer-agent-logo.png](docs/assets/maintainer-agent-logo.png),
-   200×200) and a link to the app's settings: upload it under "Display
-   information", then click **Done** on the reminder.
-5. Install the app on the repositories you want. That is all a repository
-   needs; an optional [policy file](#repository-policy) tailors behaviour.
+1. Copy [compose.example.yaml](compose.example.yaml) to `compose.yaml`, and
+   [docs/settings.example.yml](docs/settings.example.yml) to
+   `config/settings.yml`. Set `server.public_url`, your model endpoint(s)
+   under `models`, and the repositories to maintain under `repositories`.
+2. Put the secrets in `config/secrets.yaml` (mode 600): `MA_ADMIN_TOKEN`
+   (the `/admin` password) and any model API key. Set `MA_SECRETS_KEY` in the
+   container environment.
+3. Check the files, then start:
+   `docker compose run --rm server validate-config && docker compose up -d`.
+4. Open `/admin` (any user name, the admin token) and click **Create the app
+   on GitHub**. GitHub shows the preconfigured app (name, permissions,
+   webhook URL); confirm it. The server adds the app to `settings.yml` (its
+   keys to `secrets.yaml`), restarts, and sends you to the app's
+   installation page.
+5. Install the app on the repositories listed in `settings.yml`. Done.
+6. Optional: give the app its avatar. GitHub has no API for this, so
+   `/admin` shows a reminder with the logo to download and a link to the
+   app's settings.
+
+Steps 1–3 can be done by an LLM: see [docs/llm-setup.md](docs/llm-setup.md).
 
 **Several accounts.** A private GitHub App can only be installed on the
 account that owns it. To watch your personal repositories and an
 organisation's, add one app per account (enter the organisation on
 `/admin`). Or create one *public* app and limit who can use your server with
-`ALLOWED_ACCOUNTS` (required for public apps). Every app gets its own webhook URL and secret; a
-repository reachable through two apps is handled by the first one only.
-
-**Apps registered by hand** (or kept in a secret store): set
-`GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` (and
-`GITHUB_APP_SLUG`); the webhook URL is `PUBLIC_URL/webhooks/env`.
+`server.allowed_accounts` (required for public apps). Every app gets its own
+webhook URL and secret.
 
 ## Configuration
 
-Server settings are environment variables. A GitHub App cannot carry
-settings such as the model or the server URL, so they live here; tailoring
-per repository lives in the repository's policy file.
+Everything is in **`settings.yml`** (reference: [docs/settings.md](docs/settings.md)),
+inspired by [Frigate](https://docs.frigate.video/configuration/)'s file-based
+configuration:
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PUBLIC_URL` | required | HTTPS URL where GitHub reaches the server. |
-| `LLM_API_BASE` | required | OpenAI-compatible base URL, e.g. `http://10.0.0.5:8000/v1`. |
-| `LLM_MODEL` | required | litellm model name, e.g. `openai/<served-model-id>`. |
-| `LLM_API_KEY` | none | Sent to the model endpoint. The only secret agent containers see. |
-| `LLM_MODEL_ISSUE`, `LLM_MODEL_FIX`, `LLM_MODEL_REVIEW` | `LLM_MODEL` | Per-job models on the same endpoint. |
-| `RUNNER_IMAGE` | `louisremi/maintainer-agent:v0.2.0` | Agent image; build `FROM` it to add toolchains. |
-| `DATA_DIR` | `/srv/maintainer-agent` | State database, job folders. **Same absolute path on the host and in the container.** |
-| `SECRETS_KEY` | none | Encrypts app credentials at rest (AES-256-GCM). Strongly recommended. |
-| `ADMIN_TOKEN` | generated | Password of `/admin`. |
-| `ALLOWED_ACCOUNTS` | everyone | Space-separated `account` or `host/account` entries whose repositories the server serves. |
-| `MAX_CONCURRENT_JOBS` | `1` | Agent runs in parallel (one is right for a single-GPU model server). |
-| `MAX_JOBS_PER_AUTHOR_PER_DAY` | `5` | Automatic jobs per non-maintainer per day. |
-| `MAX_STEP_LIMIT`, `MAX_ATTEMPTS_CAP`, `MAX_REVIEW_COMMENTS`, `MAX_DIFF_LINES` | `120`, `5`, `50`, `20000` | Host limits; policies can only lower them. |
-| `ISSUE_STEP_LIMIT`, `REVIEW_STEP_LIMIT` | `30`, `40` | Agent steps for answers and reviews. |
-| `JOB_RETENTION_DAYS` | `14` | Finished jobs and their logs are deleted after this. |
-| `GIT_AUTHOR` | `maintainer-agent <maintainer-agent@users.noreply.github.com>` | Author of proposed commits. |
-| `PUBLIC_PATHS_ONLY_VIA_HOST` | none | Host name of `PUBLIC_URL`. On it, only `POST /webhooks/*`, `GET /admin/github/callback` and `GET /healthz` answer; use `/admin` through another address (LAN, VPN). |
-| `DOCKER_PULL` | `missing` | Pull the runner image at start (`always`, `missing`, `never`). |
+- one versioned file: older files are migrated on start, with a backup;
+- server settings, named model endpoints, GitHub Apps, defaults for every
+  repository, and the repositories to maintain, each able to override the
+  defaults (including its model, per job);
+- secrets as `{MA_NAME}` placeholders resolved from Docker secrets, the
+  environment or `secrets.yaml`, so the file can be generated and shared;
+- a JSON Schema for editors and `validate-config` for CI;
+- edited on disk or in `/admin/settings`; saving restarts the server; an
+  invalid file starts it in safe mode.
+
+The environment only holds bootstrap values: `CONFIG_DIR` (default
+`/config`), `DATA_DIR` (default `/srv/maintainer-agent`, **same absolute path
+on the host and in the container**), `PORT` (default 3000) and
+`MA_SECRETS_KEY`. Upgrading from v0.2: on first start the server writes
+`settings.yml` from the old environment variables and database; remove those
+variables afterwards (the logs list them).
 
 ## Repository policy
 
-Optional. `.maintainer-agent.yml` at the repository root (or
-`.github/maintainer-agent.yml`), read from the default branch
-([template](templates/maintainer-agent.yml)):
+The operator configures each repository in `settings.yml`. A repository's
+maintainers can also add a policy file, `.maintainer-agent.yml` at the
+repository root (or `.github/maintainer-agent.yml`), read from the default
+branch ([template](templates/maintainer-agent.yml)). It can only **narrow**
+what `settings.yml` allows (lower limits, switch features off, require the
+label, add checks and protected paths; add egress hosts only if
+`allow_repository_egress` is true):
 
 - `instructions`: files the agent reads first;
 - `playbooks`: the repository's own `issue`, `implement` and `review`
@@ -148,8 +148,9 @@ follows GitHub's
 | Output | JSON read back with `lstat` checks, size limits and a schema; text sanitised without network | a patch, re-checked by the publisher | one new `maintainer-agent/*` branch |
 | Process | non-root, `cap-drop ALL`, `no-new-privileges`, pid/memory limits, init, no Docker socket | same | same |
 
-- **The server** holds the app private keys and webhook secrets (encrypted
-  with `SECRETS_KEY`). It mints installation tokens limited to one repository
+- **The server** holds the app private keys and webhook secrets (in
+  `secrets.yaml`, mode 600, or Docker secrets; never in `settings.yml`, never
+  shown by the admin pages). It mints installation tokens limited to one repository
   and the permissions each step needs. It clones repositories itself before
   any agent runs and never runs git again on a directory an agent could
   write.
@@ -188,7 +189,7 @@ follows GitHub's
 **Known residual risks**
 - The server reaches the Docker socket, which is equivalent to root on the
   host. Run it on a dedicated host or VM, or with rootless Docker.
-- `LLM_API_KEY`, if set, is in every agent's environment (the proxy cannot
+- A model's `api_key`, if set, is in its agents' environment (the proxy cannot
   inject it). Agents can only send it to the model endpoint and, for fixes,
   the policy's hosts; use a key that only grants model access.
 - The fix agent's egress includes the policy's hosts (package registries);
@@ -212,18 +213,19 @@ added later; see [docs/architecture.md](docs/architecture.md).
 
 ## Operating it
 
-- `/admin` lists connections, their repositories (enable/disable each),
-  repositories also reachable through another app, the model status and the
-  recent jobs. **Resync** re-reads an app's installations; it also runs every
-  six hours.
+- `/admin` shows the configured repositories, the model endpoints, the
+  connections with the repositories each reaches (and those not configured,
+  with a snippet to add them), and the recent jobs. **Resync** re-reads an
+  app's installations; it also runs every six hours. `/admin/settings` edits
+  `settings.yml`.
 - If the model endpoint is down, jobs wait and resume when it is back.
 - Job folders `DATA_DIR/jobs/<id>/` keep the task, the agent's output, its
   trajectory (`out/trajectory.json`, browse with
   `pipx run --spec mini-swe-agent mini-extra inspect <file>`) and the proxy
   logs (`logs/*-egress.log`: allowed and refused hosts) for
-  `JOB_RETENTION_DAYS`.
+  `server.job_retention_days`.
 - Repositories that need more toolchains: build `FROM
-  louisremi/maintainer-agent` and set `RUNNER_IMAGE`.
+  louisremi/maintainer-agent` and set `server.runner_image`.
 - If the model's tool calls misbehave, switch to text-based parsing with
   `model_class: litellm_textbased` in the configs under `runner/config/`.
 

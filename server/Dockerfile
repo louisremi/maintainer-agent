@@ -39,5 +39,8 @@ LABEL org.opencontainers.image.title="maintainer-agent-server" \
       org.opencontainers.image.description="Self-hosted maintainer agent server: GitHub App webhooks, job queue, sandboxed agents" \
       org.opencontainers.image.source="https://github.com/louisremi/maintainer-agent" \
       org.opencontainers.image.version="${AGENT_VERSION}"
-ENTRYPOINT ["tini", "--"]
-CMD ["node", "dist/bootstrap/main.js"]
+ENV CONFIG_DIR=/config
+VOLUME ["/config"]
+# `docker run IMAGE` starts the server; `docker run IMAGE validate-config`
+# checks /config/settings.yml; `docker run IMAGE schema` prints the JSON Schema.
+ENTRYPOINT ["tini", "--", "node", "dist/bootstrap/main.js"]

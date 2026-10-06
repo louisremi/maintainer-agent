@@ -35,7 +35,7 @@ behaviour each piece needs; a new forge should get the same set.
 - **One app per account.** A private GitHub App can only be installed on the
   account that owns it. Watch repositories of several accounts by adding one
   app per account from `/admin`, or one public app restricted with
-  `ALLOWED_ACCOUNTS`.
+  `server.allowed_accounts` in settings.yml.
 - **GitHub Enterprise Server** works the same way (enter its host on
   `/admin`); the API is `https://<host>/api/v3`. Not tested against a real
   GHES yet.

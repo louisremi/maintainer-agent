@@ -1,37 +1,36 @@
 # maintainer-agent: one server, any number of GitHub Apps and repositories.
 #
-#   cp compose.example.yaml compose.yaml   # then edit the environment
+#   cp compose.example.yaml compose.yaml
+#   mkdir -p config && cp docs/settings.example.yml config/settings.yml   # then edit it
+#   printf 'MA_ADMIN_TOKEN: %s\n' "$(openssl rand -hex 16)" > config/secrets.yaml && chmod 600 config/secrets.yaml
+#   docker compose run --rm server validate-config
 #   docker compose up -d
-#   docker compose logs server | grep "admin password"
-#   open ${PUBLIC_URL}/admin  →  "Add a GitHub App"  →  install it on repositories
+#   open <public_url or this host:3000>/admin  →  "Create the app on GitHub"  →  install it
 #
-# GitHub must reach PUBLIC_URL over HTTPS (reverse proxy, Cloudflare Tunnel,
-# Tailscale Funnel...). The model endpoint must be reachable from containers
-# on the default Docker bridge (the agents reach it through an egress proxy).
+# Everything else is configured in config/settings.yml (docs/settings.md).
+# GitHub must reach server.public_url over HTTPS (reverse proxy, Cloudflare
+# Tunnel, Tailscale Funnel...). Model endpoints must be reachable from
+# containers on the default Docker bridge (agents reach them through an
+# egress proxy).
 #
 # The server starts agent containers through the Docker socket. Access to the
 # socket is equivalent to root on the host: run this on a dedicated host or
 # VM, or use rootless Docker.
 services:
   server:
-    image: louisremi/maintainer-agent-server:v0.2.0
-    restart: unless-stopped
+    image: louisremi/maintainer-agent-server:v0.3.0
+    restart: unless-stopped   # also how "Save and restart" in /admin restarts it
     ports:
       - "3000:3000"
     environment:
-      PUBLIC_URL: https://agent.example.org
-      # Keep /admin off the public URL; reach it on the published LAN port instead.
-      # PUBLIC_PATHS_ONLY_VIA_HOST: agent.example.org
-      LLM_API_BASE: http://192.0.2.10:8000/v1       # any OpenAI-compatible endpoint
-      LLM_MODEL: openai/your-model                   # litellm model name
-      # LLM_API_KEY: ...
-      RUNNER_IMAGE: louisremi/maintainer-agent:v0.2.0
       DATA_DIR: /srv/maintainer-agent
-      SECRETS_KEY: change-me-to-a-long-random-string  # encrypts app credentials at rest
-      # ALLOWED_ACCOUNTS: my-user my-org             # needed for public apps
-      # MAX_CONCURRENT_JOBS: "1"
+      # Encrypts the few secrets kept in the database (pending registrations).
+      MA_SECRETS_KEY: change-me-to-a-long-random-string
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # settings.yml, secrets.yaml and backups/ (read-write: migrations and
+      # the admin editor write here).
+      - ./config:/config
       # Must be the same absolute path on the host and in the container:
       # the server mounts job directories into the agent containers.
       - /srv/maintainer-agent:/srv/maintainer-agent

@@ -1,9 +1,16 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { stringify } from "yaml";
 import { loadConfig } from "../../src/adapters/config/server-config";
 import { signGithubPayload } from "../../src/adapters/forges/github";
 import { type App, buildApp } from "../../src/bootstrap/container";
@@ -33,26 +40,48 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 	let api: FakeGithubApi;
 	let agents: FakeAgents;
 	let workspaces: FakeWorkspaces;
+	let restarts: string[];
 
 	beforeEach(async () => {
 		dir = mkdtempSync(join(tmpdir(), "ma-e2e-"));
 		api = new FakeGithubApi();
 		agents = new FakeAgents();
 		workspaces = new FakeWorkspaces();
+		writeFileSync(
+			join(dir, "settings.yml"),
+			`version: 1
+server:
+  public_url: https://agent.example.org
+  public_paths_only_via_host: agent.example.org
+  admin_token: "{MA_ADMIN_TOKEN}"
+models:
+  default: { api_base: "http://model.invalid:8000/v1", model: openai/test }
+connections:
+  env:
+    app_id: "123"
+    app_slug: ma-env
+    private_key: "{MA_GITHUB_ENV_PRIVATE_KEY}"
+    webhook_secret: "{MA_GITHUB_ENV_WEBHOOK_SECRET}"
+repositories:
+  github.com/octo/widgets: {}
+`,
+		);
+		writeFileSync(
+			join(dir, "secrets.yaml"),
+			stringify({
+				MA_ADMIN_TOKEN: ADMIN,
+				MA_GITHUB_ENV_PRIVATE_KEY: TEST_PEM,
+				MA_GITHUB_ENV_WEBHOOK_SECRET: "env-secret",
+			}),
+		);
+		restarts = [];
 		const config = loadConfig({
-			PUBLIC_URL: "https://agent.example.org",
-			LLM_API_BASE: "http://model.invalid:8000/v1",
-			LLM_MODEL: "openai/test",
+			CONFIG_DIR: dir,
 			DATA_DIR: dir,
-			ADMIN_TOKEN: ADMIN,
-			SECRETS_KEY: "a-long-enough-secrets-key",
-			GITHUB_APP_ID: "123",
-			GITHUB_APP_SLUG: "ma-env",
-			GITHUB_PRIVATE_KEY: TEST_PEM,
-			GITHUB_WEBHOOK_SECRET: "env-secret",
-			PUBLIC_PATHS_ONLY_VIA_HOST: "agent.example.org",
+			MA_SECRETS_KEY: "a-long-enough-secrets-key",
 		});
-		app = buildApp(config, {
+		app = await buildApp(config, {
+			env: {},
 			fetch: api.fetch,
 			engine: {} as never,
 			workspaces,
@@ -63,6 +92,7 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 			modelHealth: new FakeModelHealth(),
 			logger: new MemoryLogger(),
 			databaseFile: ":memory:",
+			processControl: { requestRestart: (r) => restarts.push(r) },
 		});
 		await app.init();
 		http = await createHttpServer(app);
@@ -188,7 +218,7 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 			ok: true,
 			value: Verdict.of("question", "Run `x --help`."),
 		});
-		const r = await app.runNextJob.execute();
+		const r = await app.runNextJob?.execute();
 		expect(r).toMatchObject({ kind: "ran", status: "succeeded" });
 		const posted = api.requests.find(
 			(q) =>
@@ -238,7 +268,7 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 			_csrf: csrf,
 		});
 		expect(pub.status).toBe(400);
-		expect(pub.body.message).toMatch(/ALLOWED_ACCOUNTS/);
+		expect(pub.body.message).toMatch(/server\.allowed_accounts/);
 		// Browsers on the no-referrer admin pages send `Origin: null` (the
 		// regression this covers), or a LAN/tailnet origin matching the Host.
 		await post()
@@ -296,17 +326,20 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 			"https://github.com/apps/ma-org/installations/new",
 		);
 
-		// Each connection verifies with its own secret.
-		await hook(connectionId, "ping", {}, "org-secret").expect(202);
-		await hook(connectionId, "ping", {}, "env-secret").expect(401);
+		// The new app is written to settings.yml (secrets to secrets.yaml) and
+		// the server restarts to load it.
+		expect(restarts).toEqual(["app registered"]);
+		const settings = readFileSync(join(dir, "settings.yml"), "utf8");
+		expect(settings).toContain(`  ${connectionId}:`);
+		expect(settings).toContain("app_slug: ma-org");
+		expect(settings).not.toContain("org-secret");
+		expect(settings).not.toContain("BEGIN");
+		const secrets = readFileSync(join(dir, "secrets.yaml"), "utf8");
+		expect(secrets).toContain("org-secret");
+		expect(statSync(join(dir, "secrets.yaml")).mode & 0o777).toBe(0o600);
+		// The existing connection keeps verifying with its own secret only.
 		await hook("env", "ping", {}, "org-secret").expect(401);
-
-		const raw = (
-			app.db
-				.prepare("SELECT credentials FROM connections WHERE id = ?")
-				.get(connectionId) as { credentials: string }
-		).credentials;
-		expect(raw).not.toContain("org-secret");
+		await hook("env", "ping", {}, "env-secret").expect(202);
 	});
 
 	it("only serves GitHub's routes on the public host name", async () => {
@@ -380,8 +413,11 @@ describe("HTTP server (end to end, fake GitHub and sandbox)", () => {
 			.set("authorization", basic(ADMIN))
 			.type("form")
 			.send({ _csrf: csrf })
-			.expect(303);
-		const after = await admin().expect(200);
-		expect(after.text).not.toContain("Give the app its avatar");
+			.expect(201);
+		// Saved to settings.yml; the reminder disappears after the restart.
+		expect(restarts).toEqual(["app logo set"]);
+		expect(readFileSync(join(dir, "settings.yml"), "utf8")).toMatch(
+			/ {2}env:\n( {4}.*\n)* {4}appearance_done: true\n/,
+		);
 	});
 });

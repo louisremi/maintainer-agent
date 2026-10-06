@@ -32,6 +32,8 @@ if [[ -d server/node_modules ]] || { have pnpm && (cd server && pnpm install --f
   check "server architecture rules" bash -c 'cd server && pnpm -s arch >/dev/null'
   check "server architecture rules catch violations" tests/arch-violation.sh
   check "server tests" bash -c 'cd server && pnpm -s test >/dev/null'
+  check "settings schema and example are current" bash -c 'cd server && pnpm -s schema:check && rm -rf dist'
+  check "settings example is valid" bash -c 'cd server && npx tsc -p tsconfig.build.json && MA_ADMIN_TOKEN=xxxxxxxxxxxxxxxxxxxx node dist/bootstrap/cli.js validate-config ../docs/settings.example.yml >/dev/null; rc=$?; rm -rf dist; exit $rc'
 else
   echo "skip server (run pnpm install in server/)"
 fi

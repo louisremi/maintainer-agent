@@ -100,7 +100,7 @@ environment:
 model:
   model_class: litellm
   # model_name and model_kwargs.api_base are always passed with -c overrides
-  # by run-agent.sh (from the server's LLM_MODEL / LLM_API_BASE).
+  # by run-agent.sh (from the model the server's settings.yml selects).
   model_name: set-by-runner
   cost_tracking: ignore_errors
   model_kwargs:

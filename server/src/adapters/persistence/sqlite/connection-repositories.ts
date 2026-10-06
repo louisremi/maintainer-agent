@@ -35,6 +35,11 @@ export class SqliteConnectionRepository implements ConnectionRepository {
 	) {}
 
 	async get(id: string) {
+		return this.getSync(id);
+	}
+
+	/** Synchronous read (start-up import of v0.2 settings). */
+	getSync(id: string) {
 		const row = this.db
 			.prepare("SELECT * FROM connections WHERE id = ?")
 			.get(id) as ConnectionRow | undefined;
